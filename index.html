@@ -467,55 +467,50 @@
     }
 
     // 處理完整掃描資料
-    function processCompleteData() {
+    async function processCompleteData() {
         try {
             const result = document.getElementById('result');
-            result.style.display = 'block';
 
             // 解析左側 QR Code
             const leftData = parseLeftQRCode(leftQRData);
             const products = parseRightQRCode(rightQRData);
 
-            let productsHtml = '';
-            if (products.length > 0) {
-                productsHtml = '<div class="product-list"><h4>商品明細：</h4>';
-                products.forEach((product, index) => {
-                    const subtotal = product.quantity * product.price;
-                    productsHtml += `
-                            <div class="product-item">
-                                <div class="product-header">${index + 1}. ${product.name}</div>
-                                <div class="product-details">
-                                    <div>數量：${product.quantity}</div>
-                                    <div>單價：${formatMoney(product.price)}</div>
-                                    <div>小計：${formatMoney(subtotal)}</div>
-                                </div>
-                            </div>
-                        `;
-                });
-                productsHtml += '</div>';
-            }
-
             // 判斷是否為一般消費者
             const isConsumer = leftData.buyerBan === '00000000';
 
-            result.innerHTML = `
-                    <h3>發票資訊</h3>
-                    <div class="invoice-header">
-                        <p>發票號碼：${leftData.invoiceNumber}</p>
-                        <p>開立日期：${formatDate(leftData.date)}</p>
-                        <p>隨機碼：${leftData.randomNumber}</p>
-                    </div>
-                    <div class="seller-info">
-                        <p>賣方統編：${leftData.sellerBan}</p>
-                        ${!isConsumer ? `<p>買方統編：${leftData.buyerBan}</p>` : ''}
-                    </div>
-                    <div class="amount-info">
-                        <p>未稅金額：${formatMoney(leftData.salesAmount)}</p>
-                        <p>營業稅額：${formatMoney(leftData.taxAmount)}</p>
-                        <p class="total-amount">總計金額：${formatMoney(leftData.totalAmount)}</p>
-                    </div>
-                    ${productsHtml}
-                `;
+            // 準備發票資訊
+            const invoiceData = {
+                invoiceNumber: leftData.invoiceNumber,
+                date: formatDate(leftData.date),
+                randomNumber: leftData.randomNumber,
+                sellerBan: leftData.sellerBan,
+                buyerBan: leftData.buyerBan,
+                salesAmount: leftData.salesAmount,
+                taxAmount: leftData.taxAmount,
+                totalAmount: leftData.totalAmount,
+                products: products,
+                isConsumer: isConsumer
+            };
+
+            if (isLiffEnvironment) {
+                // LIFF 環境下的處理方式
+                const message = generateLiffMessage(invoiceData);
+                try {
+                    if (liff.isInClient()) {
+                        await liff.sendMessages([message]);
+                        document.getElementById('notice').textContent = '發票資訊已傳送至 LINE 聊天室！';
+                    }
+                } catch (error) {
+                    console.error('傳送訊息失敗:', error);
+                    // 如果傳送失敗，fallback 到一般顯示方式
+                    displayInvoiceInBrowser(invoiceData);
+                }
+            } else {
+                // 一般瀏覽器環境下的處理方式
+                displayInvoiceInBrowser(invoiceData);
+            }
+
+            result.style.display = 'block';
 
             stopScanner();
             document.getElementById('notice').textContent = '掃描完成！';
@@ -526,6 +521,216 @@
             document.getElementById('notice').textContent = '處理資料時發生錯誤，請重新掃描';
             document.getElementById('resetButton').style.display = 'inline-block';
         }
+    }
+
+    // 生成 LIFF 訊息
+    function generateLiffMessage(invoiceData) {
+        // 產生 Flex Message 格式
+        const message = {
+            type: "flex",
+            altText: `發票號碼：${invoiceData.invoiceNumber}`,
+            contents: {
+                type: "bubble",
+                header: {
+                    type: "box",
+                    layout: "vertical",
+                    contents: [
+                        {
+                            type: "text",
+                            text: "電子發票資訊",
+                            weight: "bold",
+                            size: "xl",
+                            color: "#27ae60"
+                        }
+                    ]
+                },
+                body: {
+                    type: "box",
+                    layout: "vertical",
+                    contents: [
+                        {
+                            type: "box",
+                            layout: "vertical",
+                            margin: "lg",
+                            spacing: "sm",
+                            contents: [
+                                {
+                                    type: "box",
+                                    layout: "baseline",
+                                    spacing: "sm",
+                                    contents: [
+                                        {
+                                            type: "text",
+                                            text: "發票號碼",
+                                            color: "#aaaaaa",
+                                            size: "sm",
+                                            flex: 2
+                                        },
+                                        {
+                                            type: "text",
+                                            text: invoiceData.invoiceNumber,
+                                            wrap: true,
+                                            size: "sm",
+                                            flex: 4
+                                        }
+                                    ]
+                                },
+                                {
+                                    type: "box",
+                                    layout: "baseline",
+                                    spacing: "sm",
+                                    contents: [
+                                        {
+                                            type: "text",
+                                            text: "開立日期",
+                                            color: "#aaaaaa",
+                                            size: "sm",
+                                            flex: 2
+                                        },
+                                        {
+                                            type: "text",
+                                            text: invoiceData.date,
+                                            wrap: true,
+                                            size: "sm",
+                                            flex: 4
+                                        }
+                                    ]
+                                },
+                                {
+                                    type: "box",
+                                    layout: "baseline",
+                                    spacing: "sm",
+                                    contents: [
+                                        {
+                                            type: "text",
+                                            text: "總計金額",
+                                            color: "#aaaaaa",
+                                            size: "sm",
+                                            flex: 2
+                                        },
+                                        {
+                                            type: "text",
+                                            text: formatMoney(invoiceData.totalAmount),
+                                            wrap: true,
+                                            size: "sm",
+                                            flex: 4,
+                                            weight: "bold",
+                                            color: "#1976D2"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                footer: {
+                    type: "box",
+                    layout: "vertical",
+                    spacing: "sm",
+                    contents: [
+                        {
+                            type: "button",
+                            style: "link",
+                            height: "sm",
+                            action: {
+                                type: "uri",
+                                label: "查詢中獎資訊",
+                                uri: "https://invoice.etax.nat.gov.tw"
+                            }
+                        }
+                    ],
+                    flex: 0
+                }
+            }
+        };
+
+        // 如果有商品資訊，加入商品清單
+        if (invoiceData.products && invoiceData.products.length > 0) {
+            const productContents = invoiceData.products.map(product => ({
+                type: "box",
+                layout: "horizontal",
+                contents: [
+                    {
+                        type: "text",
+                        text: product.name,
+                        size: "sm",
+                        flex: 3
+                    },
+                    {
+                        type: "text",
+                        text: `${product.quantity}x${formatMoney(product.price)}`,
+                        size: "sm",
+                        flex: 2,
+                        align: "end"
+                    }
+                ]
+            }));
+
+            message.contents.body.contents.push({
+                type: "box",
+                layout: "vertical",
+                margin: "lg",
+                spacing: "sm",
+                contents: [
+                    {
+                        type: "separator",
+                        margin: "lg"
+                    },
+                    {
+                        type: "text",
+                        text: "商品明細",
+                        weight: "bold",
+                        margin: "lg"
+                    },
+                    ...productContents
+                ]
+            });
+        }
+
+        return message;
+    }
+
+    // 在瀏覽器中顯示發票資訊
+    function displayInvoiceInBrowser(invoiceData) {
+        const result = document.getElementById('result');
+
+        let productsHtml = '';
+        if (invoiceData.products.length > 0) {
+            productsHtml = '<div class="product-list"><h4>商品明細：</h4>';
+            invoiceData.products.forEach((product, index) => {
+                const subtotal = product.quantity * product.price;
+                productsHtml += `
+                        <div class="product-item">
+                            <div class="product-header">${index + 1}. ${product.name}</div>
+                            <div class="product-details">
+                                <div>數量：${product.quantity}</div>
+                                <div>單價：${formatMoney(product.price)}</div>
+                                <div>小計：${formatMoney(subtotal)}</div>
+                            </div>
+                        </div>
+                    `;
+            });
+            productsHtml += '</div>';
+        }
+
+        result.innerHTML = `
+                <h3>發票資訊</h3>
+                <div class="invoice-header">
+                    <p>發票號碼：${invoiceData.invoiceNumber}</p>
+                    <p>開立日期：${invoiceData.date}</p>
+                    <p>隨機碼：${invoiceData.randomNumber}</p>
+                </div>
+                <div class="seller-info">
+                    <p>賣方統編：${invoiceData.sellerBan}</p>
+                    ${!invoiceData.isConsumer ? `<p>買方統編：${invoiceData.buyerBan}</p>` : ''}
+                </div>
+                <div class="amount-info">
+                    <p>未稅金額：${formatMoney(invoiceData.salesAmount)}</p>
+                    <p>營業稅額：${formatMoney(invoiceData.taxAmount)}</p>
+                    <p class="total-amount">總計金額：${formatMoney(invoiceData.totalAmount)}</p>
+                </div>
+                ${productsHtml}
+            `;
     }
 
     // 綁定事件
