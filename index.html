@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>電子發票掃描器</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -32,6 +32,14 @@
         #reader {
             width: 100%;
             margin: 16px 0;
+            position: relative;
+        }
+        #video {
+            width: 100%;
+            border-radius: 8px;
+        }
+        #canvas {
+            display: none;
         }
         .button-container {
             text-align: center;
@@ -96,7 +104,10 @@
         <div id="leftStatus" class="status-item">左側 QR Code：未掃描</div>
         <div id="rightStatus" class="status-item">右側 QR Code：未掃描</div>
     </div>
-    <div id="reader"></div>
+    <div id="reader">
+        <video id="video"></video>
+        <canvas id="canvas"></canvas>
+    </div>
     <div class="button-container">
         <button id="startButton" onclick="startScanner()">開始掃描</button>
         <button id="resetButton" onclick="resetScanner()">重新開始</button>
@@ -105,43 +116,70 @@
 </div>
 
 <script>
-    let html5QrcodeScanner = null;
+    let video = document.getElementById('video');
+    let canvasElement = document.getElementById('canvas');
+    let canvas = canvasElement.getContext('2d');
     let isScanning = false;
     let leftQRData = null;
     let rightQRData = null;
     let lastScannedData = null;
     let lastScannedTime = 0;
+    let animationId = null;
 
-    function startScanner() {
+    async function startScanner() {
         if (isScanning) return;
 
-        isScanning = true;
-        document.getElementById('startButton').style.display = 'none';
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment" }
+            });
+            video.srcObject = stream;
+            video.setAttribute("playsinline", true);
+            video.play();
 
-        html5QrcodeScanner = new Html5Qrcode("reader");
-        const config = {
-            fps: 10,
-            qrbox: 250
-        };
+            document.getElementById('startButton').style.display = 'none';
+            isScanning = true;
+            requestAnimationFrame(tick);
+        } catch (error) {
+            console.error('相機存取錯誤:', error);
+            document.getElementById('notice').textContent = '無法存取相機';
+        }
+    }
 
-        html5QrcodeScanner.start(
-            { facingMode: "environment" },
-            config,
-            onScanSuccess,
-            onScanFailure
-        );
+    function tick() {
+        if (!isScanning) return;
+
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvasElement.height = video.videoHeight;
+            canvasElement.width = video.videoWidth;
+            canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+
+            const imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: "dontInvert",
+            });
+
+            if (code) {
+                onScanSuccess(code.data);
+            }
+        }
+        animationId = requestAnimationFrame(tick);
     }
 
     async function stopScanner() {
-        if (html5QrcodeScanner) {
-            try {
-                await html5QrcodeScanner.stop();
-                html5QrcodeScanner = null;
-            } catch (error) {
-                console.error('停止掃描時發生錯誤:', error);
-            }
-        }
+        if (!isScanning) return;
+
         isScanning = false;
+        if (animationId) {
+            cancelAnimationFrame(animationId);
+            animationId = null;
+        }
+
+        if (video.srcObject) {
+            const tracks = video.srcObject.getTracks();
+            tracks.forEach(track => track.stop());
+            video.srcObject = null;
+        }
     }
 
     function resetScanner() {
@@ -234,10 +272,6 @@
         }
     }
 
-    function onScanFailure(error) {
-        console.log(error);
-    }
-
     function processCompleteData() {
         try {
             const result = document.getElementById('result');
@@ -249,7 +283,6 @@
             const salesAmount = parseInt(leftQRData.substring(21, 29), 16);
             const totalAmount = parseInt(leftQRData.substring(29, 37), 16);
 
-            // 解析商品資訊
             const products = parseProducts(rightQRData);
 
             let productsHtml = '';
