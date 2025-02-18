@@ -33,10 +33,8 @@
             width: 100%;
             margin: 16px 0;
         }
-        .button-group {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
+        .button-container {
+            text-align: center;
             margin-top: 16px;
         }
         button {
@@ -48,13 +46,14 @@
             cursor: pointer;
             transition: background-color 0.2s;
         }
-        .start-btn {
+        #startButton {
             background: #4CAF50;
             color: white;
         }
-        .reset-btn {
+        #resetButton {
             background: #f44336;
             color: white;
+            display: none;
         }
         #result {
             margin-top: 16px;
@@ -89,9 +88,9 @@
         <div id="rightStatus" class="status-item">右側 QR Code：未掃描</div>
     </div>
     <div id="reader"></div>
-    <div class="button-group">
-        <button class="start-btn" onclick="startScanner()">開始掃描</button>
-        <button class="reset-btn" onclick="resetScanner()">重新開始</button>
+    <div class="button-container">
+        <button id="startButton" onclick="startScanner()">開始掃描</button>
+        <button id="resetButton" onclick="resetScanner()">重新開始</button>
     </div>
     <div id="result"></div>
 </div>
@@ -106,6 +105,8 @@
         if (isScanning) return;
 
         isScanning = true;
+        document.getElementById('startButton').style.display = 'none';
+
         html5QrcodeScanner = new Html5Qrcode("reader");
         const config = {
             fps: 10,
@@ -143,27 +144,24 @@
         document.getElementById('rightStatus').className = 'status-item';
         document.getElementById('result').style.display = 'none';
         document.getElementById('result').textContent = '';
+        document.getElementById('startButton').style.display = 'inline-block';
+        document.getElementById('resetButton').style.display = 'none';
     }
 
     function onScanSuccess(decodedText) {
         try {
-            // 判斷是左側還是右側 QR Code
             if (decodedText.length >= 77 && !leftQRData) {
-                // 左側 QR Code
                 leftQRData = decodedText;
                 document.getElementById('leftStatus').textContent = '左側 QR Code：已掃描';
                 document.getElementById('leftStatus').className = 'status-item done';
             } else if (decodedText.startsWith('**') && !rightQRData) {
-                // 右側 QR Code
                 rightQRData = decodedText;
                 document.getElementById('rightStatus').textContent = '右側 QR Code：已掃描';
                 document.getElementById('rightStatus').className = 'status-item done';
             }
 
-            // 更新提示訊息
             updateNotice();
 
-            // 檢查是否完成掃描
             if (leftQRData && rightQRData) {
                 processCompleteData();
             }
@@ -184,7 +182,6 @@
     }
 
     function onScanFailure(error) {
-        // 掃描失敗時不需要特別處理
         console.log(error);
     }
 
@@ -193,14 +190,12 @@
             const result = document.getElementById('result');
             result.style.display = 'block';
 
-            // 解析左側 QR Code
             const invoiceNumber = leftQRData.substring(0, 10);
             const date = leftQRData.substring(10, 17);
             const randomNumber = leftQRData.substring(17, 21);
             const salesAmount = parseInt(leftQRData.substring(21, 29), 16);
             const totalAmount = parseInt(leftQRData.substring(29, 37), 16);
 
-            // 顯示發票資訊
             result.innerHTML = `
                     <h3>發票資訊</h3>
                     <p>發票號碼：${invoiceNumber}</p>
@@ -209,13 +204,14 @@
                     <p>總金額：${totalAmount}</p>
                 `;
 
-            // 停止掃描
             stopScanner();
             document.getElementById('notice').textContent = '掃描完成！';
+            document.getElementById('resetButton').style.display = 'inline-block';
 
         } catch (error) {
-            console.error('處理完整資料時發生錯誤:', error);
+            console.error('處理資料時發生錯誤:', error);
             document.getElementById('notice').textContent = '處理資料時發生錯誤，請重新掃描';
+            document.getElementById('resetButton').style.display = 'inline-block';
         }
     }
 
