@@ -139,24 +139,23 @@
     // 初始化應用程式
     async function initializeApp() {
         try {
-            // 先檢查是否在 LINE 環境中
-            if ('liff' in window) {
+            // 檢查 User Agent 是否包含 Line 相關字串
+            const isLineAppOrBrowser = /Line/i.test(navigator.userAgent);
+
+            if (isLineAppOrBrowser) {
+                // 在 LINE 環境中，初始化 LIFF
                 await liff.init({
                     liffId: liffId
                 });
-
-                // 只有在 LINE 應用程式內才使用 LIFF
-                if (liff.isInClient()) {
-                    isLiffEnvironment = true;
-                    document.getElementById('browserInfo').textContent = '在 LINE 應用程式內執行中';
-                } else {
-                    useHTML5QRCode();
-                }
+                isLiffEnvironment = true;
+                document.getElementById('browserInfo').textContent = '在 LINE 環境中執行';
             } else {
+                // 非 LINE 環境，使用 HTML5 QR Code
                 useHTML5QRCode();
             }
         } catch (err) {
             console.error('初始化失敗:', err);
+            // 如果 LIFF 初始化失敗，降級到 HTML5 QR Code
             useHTML5QRCode();
         }
     }
