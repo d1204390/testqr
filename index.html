@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>電子發票掃描器</title>
+    <title>台灣電子發票掃描器</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
     <style>
         body {
@@ -13,30 +13,35 @@
             padding: 20px;
             background-color: #f8f9fa;
         }
-        .scanner-container {
-            margin: 20px auto;
-            max-width: 640px;
+        .container {
             background: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        #reader {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
         }
         .result-container {
-            margin: 20px auto;
-            padding: 20px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
         }
         .result-item {
             margin: 10px 0;
             padding: 10px;
-            background: #f8f9fa;
+            background: white;
             border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
-        .result-label {
+        .label {
             font-weight: bold;
             color: #495057;
+            margin-right: 10px;
         }
         button {
             background-color: #007bff;
@@ -51,11 +56,6 @@
         button:hover {
             background-color: #0056b3;
         }
-        #reader {
-            width: 100%;
-            max-width: 600px;
-            margin: 0 auto;
-        }
         .error {
             color: #dc3545;
             background-color: #f8d7da;
@@ -66,13 +66,14 @@
     </style>
 </head>
 <body>
-<h1>電子發票掃描器</h1>
-<div class="scanner-container">
+<div class="container">
+    <h1>台灣電子發票掃描器</h1>
     <div id="reader"></div>
-    <button id="startButton" onclick="startScanner()">開始掃描</button>
-    <button id="stopButton" onclick="stopScanner()" style="display: none;">停止掃描</button>
+    <button onclick="startScanner()">開始掃描</button>
+    <button onclick="stopScanner()" style="display: none;">停止掃描</button>
 </div>
-<div id="result" class="result-container" style="display: none;">
+
+<div id="result" class="container" style="display: none;">
     <h2>掃描結果</h2>
     <div id="invoiceDetails"></div>
 </div>
@@ -80,53 +81,80 @@
 <script>
     let html5QrcodeScanner = null;
 
-    // 解析發票 QR Code 內容
+    // 解析發票 QR Code
     function parseInvoiceQRCode(text) {
         try {
-            // 移除可能的前導字符
-            text = text.trim();
-
-            // 檢查是否為發票 QR Code
-            if (text.length < 10) {
-                throw new Error('不是有效的發票 QR Code');
+            // 依據財政部規格解析 QR Code 內容
+            // 前77碼為固定格式
+            if (text.length < 77) {
+                throw new Error('QR Code 格式不正確');
             }
 
-            // 解析發票資訊
-            // 實際的發票格式可能需要根據最新規範調整
-            const parts = text.split(':');
-            if (parts.length < 2) {
-                throw new Error('發票格式不正確');
-            }
-
-            const invoiceData = {
-                number: parts[0],
-                date: parts[1],
-                amount: parts[2] || '無金額資訊',
-                // 可以根據需要解析更多欄位
+            const invoice = {
+                number: text.substring(0, 10),          // 發票號碼
+                date: text.substring(10, 17),           // 發票開立日期
+                randomNumber: text.substring(17, 21),   // 隨機碼
+                salesAmount: parseInt(text.substring(21, 29), 16),  // 銷售額(16進位)
+                totalAmount: parseInt(text.substring(29, 37), 16),  // 總計金額(16進位)
+                buyerIdentifier: text.substring(37, 45),           // 買方統編
+                sellerIdentifier: text.substring(45, 53),          // 賣方統編
+                encryptionInfo: text.substring(53, 77)             // 加密驗證資訊
             };
 
-            return invoiceData;
+            // 解析後續的商品資訊
+            let remainingText = text.substring(77);
+            let items = [];
+
+            if (remainingText.length > 0) {
+                // 以 : 分隔的資訊
+                const parts = remainingText.split(':');
+                if (parts.length >= 4) {
+                    invoice.extraInfo = parts[1];  // 營業人自行使用區
+                    invoice.itemCount = parts[2];  // 品項數
+                    invoice.encoding = parts[3];   // 中文編碼參數
+                }
+            }
+
+            return invoice;
         } catch (error) {
             console.error('解析發票資料時發生錯誤:', error);
-            throw new Error('無法解析發票資料，請確認是否掃描正確的發票 QR Code');
+            throw new Error('無法解析發票資料，請確認是否掃描正確的電子發票 QR Code');
         }
     }
 
     // 顯示發票資訊
-    function displayInvoiceInfo(invoiceData) {
+    function displayInvoiceInfo(invoice) {
         const detailsDiv = document.getElementById('invoiceDetails');
         detailsDiv.innerHTML = `
                 <div class="result-item">
-                    <span class="result-label">發票號碼：</span>${invoiceData.number}
+                    <span class="label">發票號碼：</span>${invoice.number}
                 </div>
                 <div class="result-item">
-                    <span class="result-label">開立日期：</span>${invoiceData.date}
+                    <span class="label">開立日期：</span>${formatDate(invoice.date)}
                 </div>
                 <div class="result-item">
-                    <span class="result-label">金額：</span>${invoiceData.amount}
+                    <span class="label">隨機碼：</span>${invoice.randomNumber}
+                </div>
+                <div class="result-item">
+                    <span class="label">銷售額：</span>${invoice.salesAmount}
+                </div>
+                <div class="result-item">
+                    <span class="label">總計金額：</span>${invoice.totalAmount}
+                </div>
+                <div class="result-item">
+                    <span class="label">賣方統編：</span>${invoice.sellerIdentifier}
                 </div>
             `;
         document.getElementById('result').style.display = 'block';
+    }
+
+    // 格式化日期
+    function formatDate(dateStr) {
+        // 民國年轉西元年
+        const year = parseInt(dateStr.substring(0, 3)) + 1911;
+        const month = dateStr.substring(3, 5);
+        const day = dateStr.substring(5, 7);
+        return `${year}年${month}月${day}日`;
     }
 
     // 開始掃描
@@ -143,9 +171,9 @@
             config,
             async (decodedText) => {
                 try {
-                    const invoiceData = parseInvoiceQRCode(decodedText);
+                    const invoice = parseInvoiceQRCode(decodedText);
                     await stopScanner();
-                    displayInvoiceInfo(invoiceData);
+                    displayInvoiceInfo(invoice);
                 } catch (error) {
                     console.error('處理掃描結果時發生錯誤:', error);
                     document.getElementById('result').innerHTML = `
@@ -163,9 +191,6 @@
                     <div class="error">無法啟動掃描器：${err.message}</div>
                 `;
         });
-
-        document.getElementById('startButton').style.display = 'none';
-        document.getElementById('stopButton').style.display = 'block';
     }
 
     // 停止掃描
@@ -173,8 +198,6 @@
         if (html5QrcodeScanner) {
             try {
                 await html5QrcodeScanner.stop();
-                document.getElementById('startButton').style.display = 'block';
-                document.getElementById('stopButton').style.display = 'none';
             } catch (error) {
                 console.error('停止掃描器時發生錯誤:', error);
             }
