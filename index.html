@@ -2,9 +2,9 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>電子發票掃描器</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>發票掃描器</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.min.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -29,14 +29,6 @@
             margin: 10px 0;
             font-weight: bold;
         }
-        #reader {
-            width: 100%;
-            margin: 16px 0;
-        }
-        .button-container {
-            text-align: center;
-            margin-top: 16px;
-        }
         button {
             padding: 12px 24px;
             border: none;
@@ -45,6 +37,8 @@
             font-weight: bold;
             cursor: pointer;
             transition: background-color 0.2s;
+            width: 100%;
+            margin: 8px 0;
         }
         #startButton {
             background: #4CAF50;
@@ -78,6 +72,19 @@
             background: #C8E6C9;
             color: #2E7D32;
         }
+        #videoContainer {
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            position: relative;
+        }
+        #video {
+            width: 100%;
+            border-radius: 8px;
+        }
+        #canvas {
+            display: none;
+        }
         .product-list {
             margin-top: 10px;
             border-top: 1px solid #ccc;
@@ -96,69 +103,63 @@
         <div id="leftStatus" class="status-item">左側 QR Code：未掃描</div>
         <div id="rightStatus" class="status-item">右側 QR Code：未掃描</div>
     </div>
-    <div id="reader"></div>
-    <div class="button-container">
-        <button id="startButton" onclick="startScanner()">開始掃描</button>
-        <button id="resetButton" onclick="resetScanner()">重新開始</button>
+    <div id="videoContainer">
+        <video id="video"></video>
+        <canvas id="canvas"></canvas>
     </div>
+    <button id="startButton" onclick="startScanner()">開始掃描</button>
+    <button id="resetButton" onclick="resetScanner()" style="display:none">重新開始</button>
     <div id="result"></div>
 </div>
 
 <script>
-    let html5QrcodeScanner = null;
-    let isScanning = false;
+    let video = document.getElementById('video');
+    let canvasElement = document.getElementById('canvas');
+    let canvas = canvasElement.getContext('2d');
+    let scanning = false;
     let leftQRData = null;
     let rightQRData = null;
     let lastScannedData = null;
     let lastScannedTime = 0;
 
-    function startScanner() {
-        if (isScanning) return;
-
-        isScanning = true;
-        document.getElementById('startButton').style.display = 'none';
-
-        html5QrcodeScanner = new Html5Qrcode("reader");
-        const config = {
-            fps: 10,
-            qrbox: 250
-        };
-
-        html5QrcodeScanner.start(
-            { facingMode: "environment" },
-            config,
-            onScanSuccess,
-            onScanFailure
-        );
+    async function startScanner() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: "environment",
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            });
+            video.srcObject = stream;
+            video.setAttribute("playsinline", true);
+            video.play();
+            requestAnimationFrame(tick);
+            scanning = true;
+            document.getElementById('startButton').style.display = 'none';
+        } catch (err) {
+            console.error('Error accessing camera:', err);
+            document.getElementById('notice').textContent = '無法存取相機，請確認權限設定';
+        }
     }
 
-    async function stopScanner() {
-        if (html5QrcodeScanner) {
-            try {
-                await html5QrcodeScanner.stop();
-                html5QrcodeScanner = null;
-            } catch (error) {
-                console.error('停止掃描時發生錯誤:', error);
+    function tick() {
+        if (!scanning) return;
+
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvasElement.height = video.videoHeight;
+            canvasElement.width = video.videoWidth;
+            canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+            var imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+            var code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: "dontInvert",
+            });
+
+            if (code) {
+                handleQRCode(code.data);
             }
         }
-        isScanning = false;
-    }
-
-    function resetScanner() {
-        stopScanner();
-        leftQRData = null;
-        rightQRData = null;
-        lastScannedData = null;
-        lastScannedTime = 0;
-        document.getElementById('notice').textContent = '請掃描發票上的任一 QR Code';
-        document.getElementById('leftStatus').textContent = '左側 QR Code：未掃描';
-        document.getElementById('leftStatus').className = 'status-item';
-        document.getElementById('rightStatus').textContent = '右側 QR Code：未掃描';
-        document.getElementById('rightStatus').className = 'status-item';
-        document.getElementById('result').style.display = 'none';
-        document.getElementById('result').textContent = '';
-        document.getElementById('startButton').style.display = 'inline-block';
-        document.getElementById('resetButton').style.display = 'none';
+        requestAnimationFrame(tick);
     }
 
     function isLeftQRCode(text) {
@@ -167,6 +168,43 @@
 
     function isRightQRCode(text) {
         return text.startsWith('**');
+    }
+
+    function handleQRCode(decodedText) {
+        const currentTime = new Date().getTime();
+        if (lastScannedData === decodedText && currentTime - lastScannedTime < 1000) {
+            return;
+        }
+
+        lastScannedData = decodedText;
+        lastScannedTime = currentTime;
+
+        if (isLeftQRCode(decodedText) && !leftQRData) {
+            leftQRData = decodedText;
+            document.getElementById('leftStatus').textContent = '左側 QR Code：已掃描';
+            document.getElementById('leftStatus').className = 'status-item done';
+        } else if (isRightQRCode(decodedText) && !rightQRData) {
+            rightQRData = decodedText;
+            document.getElementById('rightStatus').textContent = '右側 QR Code：已掃描';
+            document.getElementById('rightStatus').className = 'status-item done';
+        }
+
+        updateNotice();
+
+        if (leftQRData && rightQRData) {
+            processCompleteData();
+        }
+    }
+
+    function updateNotice() {
+        const notice = document.getElementById('notice');
+        if (!leftQRData && !rightQRData) {
+            notice.textContent = '請掃描發票上的任一 QR Code';
+        } else if (!leftQRData) {
+            notice.textContent = '請掃描左側 QR Code';
+        } else if (!rightQRData) {
+            notice.textContent = '請掃描右側 QR Code';
+        }
     }
 
     function parseProducts(qrData) {
@@ -193,53 +231,9 @@
         }
     }
 
-    function onScanSuccess(decodedText) {
-        try {
-            const currentTime = new Date().getTime();
-            if (lastScannedData === decodedText && currentTime - lastScannedTime < 1000) {
-                return;
-            }
-
-            lastScannedData = decodedText;
-            lastScannedTime = currentTime;
-
-            if (isLeftQRCode(decodedText) && !leftQRData) {
-                leftQRData = decodedText;
-                document.getElementById('leftStatus').textContent = '左側 QR Code：已掃描';
-                document.getElementById('leftStatus').className = 'status-item done';
-            } else if (isRightQRCode(decodedText) && !rightQRData) {
-                rightQRData = decodedText;
-                document.getElementById('rightStatus').textContent = '右側 QR Code：已掃描';
-                document.getElementById('rightStatus').className = 'status-item done';
-            }
-
-            updateNotice();
-
-            if (leftQRData && rightQRData) {
-                processCompleteData();
-            }
-        } catch (error) {
-            console.error('處理掃描資料時發生錯誤:', error);
-        }
-    }
-
-    function updateNotice() {
-        const notice = document.getElementById('notice');
-        if (!leftQRData && !rightQRData) {
-            notice.textContent = '請掃描發票上的任一 QR Code';
-        } else if (!leftQRData) {
-            notice.textContent = '請掃描左側 QR Code';
-        } else if (!rightQRData) {
-            notice.textContent = '請掃描右側 QR Code';
-        }
-    }
-
-    function onScanFailure(error) {
-        console.log(error);
-    }
-
     function processCompleteData() {
         try {
+            stopScanner();
             const result = document.getElementById('result');
             result.style.display = 'block';
 
@@ -249,7 +243,6 @@
             const salesAmount = parseInt(leftQRData.substring(21, 29), 16);
             const totalAmount = parseInt(leftQRData.substring(29, 37), 16);
 
-            // 解析商品資訊
             const products = parseProducts(rightQRData);
 
             let productsHtml = '';
@@ -276,15 +269,36 @@
                 ${productsHtml}
             `;
 
-            stopScanner();
             document.getElementById('notice').textContent = '掃描完成！';
             document.getElementById('resetButton').style.display = 'inline-block';
-
         } catch (error) {
             console.error('處理資料時發生錯誤:', error);
             document.getElementById('notice').textContent = '處理資料時發生錯誤，請重新掃描';
             document.getElementById('resetButton').style.display = 'inline-block';
         }
+    }
+
+    function stopScanner() {
+        scanning = false;
+        if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+        }
+    }
+
+    function resetScanner() {
+        leftQRData = null;
+        rightQRData = null;
+        lastScannedData = null;
+        lastScannedTime = 0;
+        document.getElementById('notice').textContent = '請掃描發票上的任一 QR Code';
+        document.getElementById('leftStatus').textContent = '左側 QR Code：未掃描';
+        document.getElementById('leftStatus').className = 'status-item';
+        document.getElementById('rightStatus').textContent = '右側 QR Code：未掃描';
+        document.getElementById('rightStatus').className = 'status-item';
+        document.getElementById('result').style.display = 'none';
+        document.getElementById('result').textContent = '';
+        document.getElementById('startButton').style.display = 'inline-block';
+        document.getElementById('resetButton').style.display = 'none';
     }
 
     function formatDate(dateStr) {
