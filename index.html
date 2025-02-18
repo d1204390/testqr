@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>發票掃描器</title>
+    <title>智慧型發票掃描器</title>
     <script src="https://static.line-scdn.net/liff/edge/versions/2.15.0/sdk.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
     <style>
@@ -139,23 +139,32 @@
     // 初始化應用程式
     async function initializeApp() {
         try {
-            // 初始化 LIFF
-            await liff.init({
-                liffId: liffId
-            });
-
-            // 使用官方的 isInClient() 方法判斷是否在 LINE 應用程式內
-            if (liff.isInClient()) {
-                isLiffEnvironment = true;
-                document.getElementById('browserInfo').textContent = '在 LINE 應用程式內執行中';
-                document.getElementById('startButton').disabled = false;
+            // 檢查是否存在 LIFF SDK
+            if (typeof liff !== 'undefined') {
+                // 初始化 LIFF
+                await liff.init({
+                    liffId: liffId
+                }).then(() => {
+                    // 成功初始化後，檢查是否在 LINE 應用程式內
+                    if (liff.isInClient()) {
+                        console.log('在 LINE 應用程式內執行');
+                        isLiffEnvironment = true;
+                        document.getElementById('browserInfo').textContent = '在 LINE 應用程式內執行中';
+                        document.getElementById('startButton').disabled = false;
+                    } else {
+                        console.log('在外部瀏覽器執行');
+                        useHTML5QRCode();
+                    }
+                }).catch(err => {
+                    console.log('LIFF 初始化失敗:', err);
+                    useHTML5QRCode();
+                });
             } else {
-                // 非 LINE 應用程式內，使用 HTML5 QR Code
+                console.log('LIFF SDK 未載入');
                 useHTML5QRCode();
             }
         } catch (err) {
-            console.error('LIFF 初始化失敗:', err);
-            // 如果 LIFF 初始化失敗，降級到 HTML5 QR Code
+            console.error('初始化過程發生錯誤:', err);
             useHTML5QRCode();
         }
     }
@@ -182,7 +191,15 @@
         try {
             document.getElementById('notice').textContent = '開啟掃描中...';
             const result = await liff.scanCodeV2();
-            handleScanResult(result.value);
+            await handleScanResult(result.value);
+
+            // 檢查是否需要自動開始下一次掃描
+            if (isLiffEnvironment && ((leftQRData && !rightQRData) || (!leftQRData && rightQRData))) {
+                // 短暫延遲以允許UI更新
+                setTimeout(() => {
+                    startLiffScanner();
+                }, 500);
+            }
         } catch (err) {
             console.error('掃描失敗:', err);
             document.getElementById('notice').textContent = '掃描失敗：' + err.message;
@@ -211,7 +228,7 @@
     }
 
     // 處理掃描結果
-    function handleScanResult(decodedText) {
+    async function handleScanResult(decodedText) {
         try {
             const currentTime = new Date().getTime();
             if (lastScannedData === decodedText && currentTime - lastScannedTime < 1000) {
@@ -221,24 +238,36 @@
             lastScannedData = decodedText;
             lastScannedTime = currentTime;
 
+            let isNewScan = false;
+
             if (isLeftQRCode(decodedText) && !leftQRData) {
                 leftQRData = decodedText;
                 document.getElementById('leftStatus').textContent = '左側 QR Code：已掃描';
                 document.getElementById('leftStatus').className = 'status-item done';
+                isNewScan = true;
             } else if (isRightQRCode(decodedText) && !rightQRData) {
                 rightQRData = decodedText;
                 document.getElementById('rightStatus').textContent = '右側 QR Code：已掃描';
                 document.getElementById('rightStatus').className = 'status-item done';
+                isNewScan = true;
+            }
+
+            if (!isNewScan) {
+                // 如果掃描到已經掃過的 QR code，提示用戶
+                document.getElementById('notice').textContent = '此 QR Code 已掃描，請掃描另一側';
+                return;
             }
 
             updateNotice();
 
             if (leftQRData && rightQRData) {
-                processCompleteData();
+                await processCompleteData();
             }
 
-            if (isLiffEnvironment) {
-                // 如果是 LIFF 環境，每次掃描完就要重新開始
+            if (isLiffEnvironment && !(leftQRData && rightQRData)) {
+                // 在 LIFF 環境中，如果還沒掃完兩個 QR code，不要顯示開始按鈕
+                document.getElementById('startButton').style.display = 'none';
+            } else if (!isLiffEnvironment) {
                 document.getElementById('startButton').style.display = 'inline-block';
                 document.getElementById('startButton').disabled = false;
             }
