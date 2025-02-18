@@ -48,7 +48,7 @@
             transition: background-color 0.2s;
             margin: 5px;
         }
-        #startButton, #loginBtn {
+        #startButton {
             background: #00b900;
             color: white;
         }
@@ -98,6 +98,15 @@
             border-radius: 4px;
             margin: 10px 0;
         }
+        .product-list {
+            margin-top: 10px;
+            border-top: 1px solid #ccc;
+            padding-top: 10px;
+        }
+        .product-item {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
     </style>
 </head>
 <body>
@@ -109,10 +118,9 @@
         <div id="leftStatus" class="status-item">左側 QR Code：未掃描</div>
         <div id="rightStatus" class="status-item">右側 QR Code：未掃描</div>
     </div>
-    <button id="loginBtn" style="display: none;">使用 LINE 登入</button>
     <div id="reader"></div>
     <div class="button-container">
-        <button id="startButton" disabled>開始掃描</button>
+        <button id="startButton">開始掃描</button>
         <button id="resetButton" onclick="resetScanner()">重新開始</button>
     </div>
     <div id="result"></div>
@@ -131,74 +139,39 @@
     // 初始化應用程式
     async function initializeApp() {
         try {
-            // 檢查是否在 LINE 應用程式內部
-            if (window.liff && /Line/i.test(navigator.userAgent)) {
-                isLiffEnvironment = true;
-                await initializeLiff();
+            // 先檢查是否在 LINE 環境中
+            if ('liff' in window) {
+                await liff.init({
+                    liffId: liffId
+                });
+
+                // 只有在 LINE 應用程式內才使用 LIFF
+                if (liff.isInClient()) {
+                    isLiffEnvironment = true;
+                    document.getElementById('browserInfo').textContent = '在 LINE 應用程式內執行中';
+                } else {
+                    useHTML5QRCode();
+                }
             } else {
-                // 一般瀏覽器模式
-                isLiffEnvironment = false;
-                document.getElementById('browserInfo').textContent = '使用一般瀏覽器掃描模式';
-                document.getElementById('startButton').disabled = false;
-                document.getElementById('loginBtn').style.display = 'none';
+                useHTML5QRCode();
             }
         } catch (err) {
             console.error('初始化失敗:', err);
-            document.getElementById('browserInfo').className = 'error';
-            document.getElementById('browserInfo').textContent = '初始化失敗: ' + err.message;
+            useHTML5QRCode();
         }
     }
 
-    // 初始化 LIFF
-    async function initializeLiff() {
-        try {
-            await liff.init({
-                liffId: liffId,
-                withLoginOnExternalBrowser: true
-            });
-
-            console.log('LIFF 初始化成功');
-
-            if (!liff.isInClient()) {
-                if (liff.isLoggedIn()) {
-                    document.getElementById('startButton').disabled = false;
-                    document.getElementById('loginBtn').style.display = 'none';
-                    document.getElementById('browserInfo').textContent = '已登入，可以開始掃描';
-                } else {
-                    document.getElementById('loginBtn').style.display = 'block';
-                    document.getElementById('browserInfo').textContent = '請先登入 LINE 帳號';
-                }
-            } else {
-                document.getElementById('startButton').disabled = false;
-                document.getElementById('browserInfo').textContent = '在 LINE 應用程式內執行中';
-            }
-        } catch (err) {
-            console.error('LIFF 初始化失敗', err);
-            document.getElementById('browserInfo').className = 'error';
-            document.getElementById('browserInfo').textContent = '初始化失敗: ' + err.message;
-        }
-    }
-
-    // LINE 登入
-    async function lineLogin() {
-        try {
-            if (!liff.isLoggedIn()) {
-                await liff.login({
-                    redirectUri: window.location.href
-                });
-            }
-        } catch (err) {
-            console.error('登入失敗', err);
-            document.getElementById('browserInfo').className = 'error';
-            document.getElementById('browserInfo').textContent = '登入失敗: ' + err.message;
-        }
+    // 使用 HTML5 QR Code 掃描
+    function useHTML5QRCode() {
+        document.getElementById('browserInfo').textContent = '使用一般瀏覽器掃描模式';
+        isLiffEnvironment = false;
     }
 
     // 開始掃描
     async function startScanner() {
         if (isScanning) return;
 
-        if (isLiffEnvironment && liff.isInClient()) {
+        if (isLiffEnvironment) {
             startLiffScanner();
         } else {
             startHTML5Scanner();
@@ -209,11 +182,6 @@
     async function startLiffScanner() {
         try {
             document.getElementById('notice').textContent = '開啟掃描中...';
-
-            if (!liff.isInClient() && !liff.isLoggedIn()) {
-                throw new Error('請先登入後再使用掃描功能');
-            }
-
             const result = await liff.scanCodeV2();
             handleScanResult(result.value);
         } catch (err) {
@@ -280,6 +248,30 @@
         }
     }
 
+    function parseProducts(qrData) {
+        try {
+            const parts = qrData.split(':');
+            const products = [];
+            let currentProduct = {};
+
+            for (let i = 0; i < parts.length; i++) {
+                if (parts[i].includes('品名')) {
+                    currentProduct = {
+                        name: parts[i + 1],
+                        quantity: parseInt(parts[i + 2]),
+                        price: parseInt(parts[i + 3])
+                    };
+                    products.push(currentProduct);
+                }
+            }
+
+            return products;
+        } catch (error) {
+            console.error('解析商品資訊時發生錯誤:', error);
+            return [];
+        }
+    }
+
     function isLeftQRCode(text) {
         return text.length >= 77 && !text.startsWith('**');
     }
@@ -329,7 +321,6 @@
         document.getElementById('result').style.display = 'none';
         document.getElementById('result').textContent = '';
         document.getElementById('startButton').style.display = 'inline-block';
-        document.getElementById('startButton').disabled = false;
         document.getElementById('resetButton').style.display = 'none';
     }
 
@@ -344,12 +335,31 @@
             const salesAmount = parseInt(leftQRData.substring(21, 29), 16);
             const totalAmount = parseInt(leftQRData.substring(29, 37), 16);
 
+            // 解析商品資訊
+            const products = parseProducts(rightQRData);
+
+            let productsHtml = '';
+            if (products.length > 0) {
+                productsHtml = '<div class="product-list"><h4>商品明細：</h4>';
+                products.forEach(product => {
+                    productsHtml += `
+                        <div class="product-item">
+                            <div>品名：${product.name}</div>
+                            <div>數量：${product.quantity}</div>
+                            <div>單價：${product.price}</div>
+                        </div>
+                    `;
+                });
+                productsHtml += '</div>';
+            }
+
             result.innerHTML = `
                 <h3>發票資訊</h3>
                 <p>發票號碼：${invoiceNumber}</p>
                 <p>開立日期：${formatDate(date)}</p>
                 <p>隨機碼：${randomNumber}</p>
                 <p>總金額：${totalAmount}</p>
+                ${productsHtml}
             `;
 
             stopScanner();
@@ -371,7 +381,6 @@
     }
 
     // 綁定事件
-    document.getElementById('loginBtn').addEventListener('click', lineLogin);
     document.getElementById('startButton').addEventListener('click', startScanner);
 
     // 初始化應用程式
