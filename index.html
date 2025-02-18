@@ -153,9 +153,8 @@
     }
 
     function isLeftQRCode(text) {
-        return text.length >= 77 &&
-            /^\d{10}/.test(text) &&  // 檢查前10碼是否為數字 (發票號碼)
-            !text.startsWith('**');   // 確保不是右側QR Code
+        // 只要長度足夠且不是右側 QR Code 就視為左側
+        return text.length >= 77 && !text.startsWith('**');
     }
 
     function isRightQRCode(text) {
