@@ -100,6 +100,8 @@
     let isScanning = false;
     let leftQRData = null;
     let rightQRData = null;
+    let lastScannedData = null;
+    let lastScannedTime = 0;
 
     function startScanner() {
         if (isScanning) return;
@@ -137,6 +139,8 @@
         stopScanner();
         leftQRData = null;
         rightQRData = null;
+        lastScannedData = null;
+        lastScannedTime = 0;
         document.getElementById('notice').textContent = '請掃描發票上的任一 QR Code';
         document.getElementById('leftStatus').textContent = '左側 QR Code：未掃描';
         document.getElementById('leftStatus').className = 'status-item';
@@ -148,13 +152,34 @@
         document.getElementById('resetButton').style.display = 'none';
     }
 
+    function isLeftQRCode(text) {
+        return text.length >= 77 &&
+            /^\d{10}/.test(text) &&  // 檢查前10碼是否為數字 (發票號碼)
+            !text.startsWith('**');   // 確保不是右側QR Code
+    }
+
+    function isRightQRCode(text) {
+        return text.startsWith('**');
+    }
+
     function onScanSuccess(decodedText) {
         try {
-            if (decodedText.length >= 77 && !leftQRData) {
+            // 防止重複掃描同一個QR Code
+            const currentTime = new Date().getTime();
+            if (lastScannedData === decodedText && currentTime - lastScannedTime < 1000) {
+                return; // 如果1秒內掃到相同的內容，忽略
+            }
+
+            // 更新最後掃描記錄
+            lastScannedData = decodedText;
+            lastScannedTime = currentTime;
+
+            // 判斷QR Code類型並儲存
+            if (isLeftQRCode(decodedText) && !leftQRData) {
                 leftQRData = decodedText;
                 document.getElementById('leftStatus').textContent = '左側 QR Code：已掃描';
                 document.getElementById('leftStatus').className = 'status-item done';
-            } else if (decodedText.startsWith('**') && !rightQRData) {
+            } else if (isRightQRCode(decodedText) && !rightQRData) {
                 rightQRData = decodedText;
                 document.getElementById('rightStatus').textContent = '右側 QR Code：已掃描';
                 document.getElementById('rightStatus').className = 'status-item done';
@@ -162,6 +187,7 @@
 
             updateNotice();
 
+            // 檢查是否完成掃描
             if (leftQRData && rightQRData) {
                 processCompleteData();
             }
