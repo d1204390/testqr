@@ -386,12 +386,8 @@
                 await processCompleteData();
             }
 
-            if (isLiffEnvironment && !(leftQRData && rightQRData)) {
-                document.getElementById('startButton').style.display = 'none';
-            } else if (!isLiffEnvironment) {
-                document.getElementById('startButton').style.display = 'inline-block';
-                document.getElementById('startButton').disabled = false;
-            }
+            // 移除這部分的按鈕顯示邏輯，統一由 processCompleteData 處理
+            document.getElementById('startButton').style.display = 'none';
         } catch (error) {
             console.error('處理掃描資料時發生錯誤:', error);
         }
@@ -520,12 +516,13 @@
             }
 
             stopScanner();
-            // 掃描完成後隱藏開始掃描按鈕，只留下重新開始的按鈕
+            // 直接隱藏開始掃描按鈕，只顯示重新開始按鈕
             document.getElementById('startButton').style.display = 'none';
             document.getElementById('resetButton').style.display = 'inline-block';
         } catch (error) {
             console.error('處理資料時發生錯誤:', error);
             document.getElementById('notice').textContent = '處理資料時發生錯誤，請重新掃描';
+            // 發生錯誤時也只顯示重新開始按鈕
             document.getElementById('startButton').style.display = 'none';
             document.getElementById('resetButton').style.display = 'inline-block';
         }
