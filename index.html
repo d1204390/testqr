@@ -60,6 +60,13 @@
             background-color: #cccccc;
             cursor: not-allowed;
         }
+        #result {
+            margin-top: 16px;
+            padding: 16px;
+            background: #F8F9FA;
+            border-radius: 8px;
+            display: none;
+        }
         .scan-status {
             display: flex;
             gap: 10px;
@@ -90,6 +97,60 @@
             border-radius: 4px;
             margin: 10px 0;
         }
+        .invoice-section {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .invoice-header {
+            background: #E8F5E9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .seller-info {
+            background: #E3F2FD;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .amount-info {
+            background: #FFF3E0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .item-list {
+            margin-top: 15px;
+        }
+        .item-card {
+            background: white;
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            border: 1px solid #E0E0E0;
+        }
+        .item-header {
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #2E7D32;
+        }
+        .item-details {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            font-size: 0.9em;
+            color: #616161;
+        }
+        .total-amount {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #1976D2;
+            text-align: right;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -106,6 +167,7 @@
         <button id="startButton">開始掃描</button>
         <button id="resetButton" onclick="resetScanner()">重新開始</button>
     </div>
+    <div id="result"></div>
 </div>
 
 <script>
@@ -204,6 +266,90 @@
         );
     }
 
+    // 解析發票資料
+    function parseInvoiceData(leftQRData, rightQRData) {
+        // 解析左側 QR Code 固定長度部分 (77碼)
+        const basicInfo = {
+            invoiceNumber: leftQRData.substring(0, 10),
+            date: leftQRData.substring(10, 17),
+            randomNumber: leftQRData.substring(17, 21),
+            salesAmount: parseInt(leftQRData.substring(21, 29), 16),
+            totalAmount: parseInt(leftQRData.substring(29, 37), 16),
+            buyerBan: leftQRData.substring(37, 45),
+            sellerBan: leftQRData.substring(45, 53),
+            encryptInfo: leftQRData.substring(53, 77),
+        };
+
+        // 解析剩餘的品項資訊
+        let remainingLeft = leftQRData.substring(77);
+        let parts = remainingLeft.split(':');
+
+        // 移除自定義區 (第一個分隔後的10個*)
+        parts = parts.slice(1);
+
+        // 取得品項數量資訊
+        const itemCount = parseInt(parts[0]);
+        const totalItems = parseInt(parts[1]);
+
+        // 取得編碼方式
+        const encoding = parseInt(parts[2]);
+
+        // 組合所有品項資訊
+        let itemParts = parts.slice(3);
+        if (rightQRData) {
+            // 移除右側 QR Code 的 ** 開頭
+            const rightParts = rightQRData.substring(2).split(':');
+            itemParts = itemParts.concat(rightParts);
+        }
+
+        // 解析品項
+        const items = [];
+        for (let i = 0; i < itemParts.length; i += 3) {
+            if (i + 2 < itemParts.length) {
+                const name = decodeItemName(itemParts[i], encoding);
+                const quantity = parseInt(itemParts[i + 1]);
+                const price = parseInt(itemParts[i + 2]);
+
+                if (name && !isNaN(quantity) && !isNaN(price)) {
+                    items.push({
+                        name: name,
+                        quantity: quantity,
+                        price: price,
+                        subtotal: quantity * price
+                    });
+                }
+            }
+        }
+
+        return {
+            ...basicInfo,
+            items: items,
+            itemCount: itemCount,
+            totalItems: totalItems
+        };
+    }
+
+    // 解碼品項名稱
+    function decodeItemName(name, encoding) {
+        try {
+            switch (encoding) {
+                case 0: // Big5
+                    return name; // 需要額外的 Big5 解碼處理
+                case 1: // UTF-8
+                    return name;
+                case 2: // Base64
+                    return atob(name);
+                case 3: // 境外電商 UTF-8
+                    return name;
+                default:
+                    return name;
+            }
+        } catch (e) {
+            console.error('解碼品項名稱失敗:', e);
+            return name;
+        }
+    }
+
     // 處理掃描結果
     async function handleScanResult(decodedText) {
         try {
@@ -239,6 +385,13 @@
             if (leftQRData && rightQRData) {
                 await processCompleteData();
             }
+
+            if (isLiffEnvironment && !(leftQRData && rightQRData)) {
+                document.getElementById('startButton').style.display = 'none';
+            } else if (!isLiffEnvironment) {
+                document.getElementById('startButton').style.display = 'inline-block';
+                document.getElementById('startButton').disabled = false;
+            }
         } catch (error) {
             console.error('處理掃描資料時發生錯誤:', error);
         }
@@ -272,21 +425,77 @@
         console.warn(`掃描錯誤: ${error}`);
     }
 
-    // 解析發票資料
-    function parseInvoiceData(leftQRData, rightQRData) {
-        // 解析左側 QR Code 固定長度部分 (77碼)
-        const basicInfo = {
-            invoiceNumber: leftQRData.substring(0, 10),
-            date: leftQRData.substring(10, 17),
-            randomNumber: leftQRData.substring(17, 21),
-            salesAmount: parseInt(leftQRData.substring(21, 29), 16),
-            totalAmount: parseInt(leftQRData.substring(29, 37), 16),
-            buyerBan: leftQRData.substring(37, 45),
-            sellerBan: leftQRData.substring(45, 53),
-            encryptInfo: leftQRData.substring(53, 77),
-        };
+    // 格式化金額
+    function formatMoney(amount) {
+        return new Intl.NumberFormat('zh-TW', {
+            style: 'currency',
+            currency: 'TWD',
+            minimumFractionDigits: 0
+        }).format(amount).replace('TWD', 'NT$');
+    }
 
-        return basicInfo;
+    // 格式化日期
+    function formatDate(dateStr) {
+        const year = parseInt(dateStr.substring(0, 3)) + 1911;
+        const month = dateStr.substring(3, 5);
+        const day = dateStr.substring(5, 7);
+        return `${year}年${month}月${day}日`;
+    }
+
+    // 顯示發票資訊
+    async function displayInvoiceInfo(invoiceData) {
+        const result = document.getElementById('result');
+        result.style.display = 'block';
+
+        // 準備品項 HTML
+        let itemsHtml = '';
+        if (invoiceData.items && invoiceData.items.length > 0) {
+            itemsHtml = '<div class="item-list">';
+            invoiceData.items.forEach((item, index) => {
+                itemsHtml += `
+                        <div class="item-card">
+                            <div class="item-header">
+                                ${index + 1}. ${item.name}
+                            </div>
+                            <div class="item-details">
+                                <div>數量：${item.quantity}</div>
+                                <div>單價：${formatMoney(item.price)}</div>
+                                <div>小計：${formatMoney(item.subtotal)}</div>
+                            </div>
+                        </div>
+                    `;
+            });
+            itemsHtml += '</div>';
+        }
+
+        // 判斷是否為一般消費者
+        const isConsumer = invoiceData.buyerBan === '00000000';
+
+        result.innerHTML = `
+                <div class="invoice-section">
+                    <div class="invoice-header">
+                        <h3>發票資訊</h3>
+                        <p>發票號碼：${invoiceData.invoiceNumber}</p>
+                        <p>開立日期：${formatDate(invoiceData.date)}</p>
+                        <p>隨機碼：${invoiceData.randomNumber}</p>
+                    </div>
+
+                    <div class="seller-info">
+                        <h4>商家資訊</h4>
+                        <p>賣方統編：${invoiceData.sellerBan}</p>
+                        ${!isConsumer ? `<p>買方統編：${invoiceData.buyerBan}</p>` : ''}
+                    </div>
+
+                    <div class="amount-info">
+                        <h4>金額資訊</h4>
+                        <p>未稅金額：${formatMoney(invoiceData.salesAmount)}</p>
+                        <p>營業稅額：${formatMoney(invoiceData.totalAmount - invoiceData.salesAmount)}</p>
+                        <p class="total-amount">總計金額：${formatMoney(invoiceData.totalAmount)}</p>
+                    </div>
+
+                    ${itemsHtml}
+                </div>
+            `;
     }
 
     // 處理完整資料
@@ -295,34 +504,139 @@
             const invoiceData = parseInvoiceData(leftQRData, rightQRData);
 
             if (isLiffEnvironment) {
-                // 在 LIFF 環境中直接傳送訊息
+                const message = generateLiffMessage(invoiceData);
                 try {
                     if (liff.isInClient()) {
-                        const message = {
-                            type: 'text',
-                            text: `發票號碼：${invoiceData.invoiceNumber}\n掃描完成！`
-                        };
                         await liff.sendMessages([message]);
-                        document.getElementById('notice').textContent = '發票資訊已傳送！';
+                        document.getElementById('notice').textContent = '發票資訊已傳送至 LINE 聊天室！';
                     }
+                    await displayInvoiceInfo(invoiceData);
                 } catch (error) {
                     console.error('傳送訊息失敗:', error);
-                    document.getElementById('notice').textContent = '掃描完成！';
+                    await displayInvoiceInfo(invoiceData);
                 }
             } else {
-                document.getElementById('notice').textContent = '掃描完成！';
+                await displayInvoiceInfo(invoiceData);
             }
 
-            // 停止掃描並隱藏相關元素
             stopScanner();
+            // 掃描完成後隱藏開始掃描按鈕，只留下重新開始的按鈕
             document.getElementById('startButton').style.display = 'none';
-            document.getElementById('reader').style.display = 'none';
             document.getElementById('resetButton').style.display = 'inline-block';
         } catch (error) {
             console.error('處理資料時發生錯誤:', error);
             document.getElementById('notice').textContent = '處理資料時發生錯誤，請重新掃描';
+            document.getElementById('startButton').style.display = 'none';
             document.getElementById('resetButton').style.display = 'inline-block';
         }
+    }
+
+
+    // 生成 LIFF 訊息
+    function generateLiffMessage(invoiceData) {
+        const isConsumer = invoiceData.buyerBan === '00000000';
+
+        // 建立基本的 Flex Message 內容
+        const message = {
+            type: "flex",
+            altText: `發票號碼：${invoiceData.invoiceNumber}`,
+            contents: {
+                type: "bubble",
+                header: {
+                    type: "box",
+                    layout: "vertical",
+                    contents: [
+                        {
+                            type: "text",
+                            text: "電子發票資訊",
+                            weight: "bold",
+                            size: "xl",
+                            color: "#27ae60"
+                        }
+                    ]
+                },
+                body: {
+                    type: "box",
+                    layout: "vertical",
+                    contents: [
+                        {
+                            type: "box",
+                            layout: "vertical",
+                            spacing: "sm",
+                            contents: [
+                                {
+                                    type: "text",
+                                    text: `發票號碼：${invoiceData.invoiceNumber}`,
+                                    wrap: true
+                                },
+                                {
+                                    type: "text",
+                                    text: `開立日期：${formatDate(invoiceData.date)}`,
+                                    wrap: true
+                                },
+                                {
+                                    type: "text",
+                                    text: `賣方統編：${invoiceData.sellerBan}`,
+                                    wrap: true
+                                },
+                                {
+                                    type: "text",
+                                    text: `總計金額：${formatMoney(invoiceData.totalAmount)}`,
+                                    weight: "bold",
+                                    color: "#1976D2",
+                                    wrap: true
+                                }
+                            ]
+                        }
+                    ]
+                },
+                footer: {
+                    type: "box",
+                    layout: "vertical",
+                    contents: [
+                        {
+                            type: "button",
+                            style: "link",
+                            action: {
+                                type: "uri",
+                                label: "查詢中獎資訊",
+                                uri: "https://invoice.etax.nat.gov.tw"
+                            }
+                        }
+                    ]
+                }
+            }
+        };
+
+        // 如果有商品資訊，加入商品清單
+        if (invoiceData.items && invoiceData.items.length > 0) {
+            const itemsBox = {
+                type: "box",
+                layout: "vertical",
+                margin: "lg",
+                contents: [
+                    {
+                        type: "text",
+                        text: "商品明細",
+                        weight: "bold",
+                        margin: "sm"
+                    }
+                ]
+            };
+
+            invoiceData.items.forEach(item => {
+                itemsBox.contents.push({
+                    type: "text",
+                    text: `${item.name} x${item.quantity} ${formatMoney(item.price)}`,
+                    size: "sm",
+                    margin: "sm"
+                });
+            });
+
+            message.contents.body.contents.push(itemsBox);
+        }
+
+        return message;
     }
 
     // 停止掃描
@@ -350,9 +664,10 @@
         document.getElementById('leftStatus').className = 'status-item';
         document.getElementById('rightStatus').textContent = '右側 QR Code：未掃描';
         document.getElementById('rightStatus').className = 'status-item';
+        document.getElementById('result').style.display = 'none';
+        document.getElementById('result').textContent = '';
         document.getElementById('startButton').style.display = 'inline-block';
         document.getElementById('resetButton').style.display = 'none';
-        document.getElementById('reader').style.display = 'block';
     }
 
     // 綁定事件
