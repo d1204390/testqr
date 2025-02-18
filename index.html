@@ -78,6 +78,18 @@
             background: #C8E6C9;
             color: #2E7D32;
         }
+        .product-list {
+            margin-top: 16px;
+            border-top: 1px solid #ddd;
+            padding-top: 16px;
+        }
+        .product-item {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
@@ -153,7 +165,6 @@
     }
 
     function isLeftQRCode(text) {
-        // 只要長度足夠且不是右側 QR Code 就視為左側
         return text.length >= 77 && !text.startsWith('**');
     }
 
@@ -161,19 +172,37 @@
         return text.startsWith('**');
     }
 
+    function parseProducts(rightQRData) {
+        if (!rightQRData || !rightQRData.includes(':')) return [];
+
+        const products = [];
+        const parts = rightQRData.split(':');
+
+        // 從第2個元素開始，每3個元素組成一個商品
+        for (let i = 1; i < parts.length; i += 3) {
+            if (parts[i] && parts[i+1] && parts[i+2]) {
+                products.push({
+                    name: parts[i],
+                    quantity: parts[i+1],
+                    price: parts[i+2]
+                });
+            }
+        }
+
+        return products;
+    }
+
     function onScanSuccess(decodedText) {
         try {
             // 防止重複掃描同一個QR Code
             const currentTime = new Date().getTime();
             if (lastScannedData === decodedText && currentTime - lastScannedTime < 1000) {
-                return; // 如果1秒內掃到相同的內容，忽略
+                return;
             }
 
-            // 更新最後掃描記錄
             lastScannedData = decodedText;
             lastScannedTime = currentTime;
 
-            // 判斷QR Code類型並儲存
             if (isLeftQRCode(decodedText) && !leftQRData) {
                 leftQRData = decodedText;
                 document.getElementById('leftStatus').textContent = '左側 QR Code：已掃描';
@@ -186,7 +215,6 @@
 
             updateNotice();
 
-            // 檢查是否完成掃描
             if (leftQRData && rightQRData) {
                 processCompleteData();
             }
@@ -221,13 +249,32 @@
             const salesAmount = parseInt(leftQRData.substring(21, 29), 16);
             const totalAmount = parseInt(leftQRData.substring(29, 37), 16);
 
-            result.innerHTML = `
-                    <h3>發票資訊</h3>
-                    <p>發票號碼：${invoiceNumber}</p>
-                    <p>開立日期：${formatDate(date)}</p>
-                    <p>隨機碼：${randomNumber}</p>
-                    <p>總金額：${totalAmount}</p>
-                `;
+            // 解析商品資訊
+            const products = parseProducts(rightQRData);
+
+            let html = `
+                <h3>發票資訊</h3>
+                <p>發票號碼：${invoiceNumber}</p>
+                <p>開立日期：${formatDate(date)}</p>
+                <p>隨機碼：${randomNumber}</p>
+                <p>總金額：${totalAmount}</p>
+            `;
+
+            // 添加商品資訊
+            if (products.length > 0) {
+                html += '<div class="product-list"><h3>商品明細</h3>';
+                products.forEach(product => {
+                    html += `
+                        <div class="product-item">
+                            <span>${product.name}</span>
+                            <span>${product.quantity} x ${product.price}</span>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            }
+
+            result.innerHTML = html;
 
             stopScanner();
             document.getElementById('notice').textContent = '掃描完成！';
