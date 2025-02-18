@@ -104,8 +104,42 @@
             padding-top: 10px;
         }
         .product-item {
-            padding: 8px;
+            padding: 12px;
             border-bottom: 1px solid #eee;
+            margin-bottom: 8px;
+        }
+        .product-header {
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #2E7D32;
+        }
+        .product-details {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        .invoice-header {
+            background: #E8F5E9;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+        .seller-info {
+            background: #F5F5F5;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+        .amount-info {
+            background: #E3F2FD;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+        .total-amount {
+            font-weight: bold;
+            color: #1976D2;
+            font-size: 1.1em;
         }
     </style>
 </head>
@@ -136,29 +170,43 @@
     let lastScannedTime = 0;
     let isLiffEnvironment = false;
 
+    // 格式化金額
+    const formatMoney = (amount) => {
+        return new Intl.NumberFormat('zh-TW', {
+            style: 'currency',
+            currency: 'TWD',
+            minimumFractionDigits: 0
+        }).format(amount).replace('TWD', 'NT$');
+    };
+
+    // 格式化日期
+    function formatDate(dateStr) {
+        const year = parseInt(dateStr.substring(0, 3)) + 1911;
+        const month = dateStr.substring(3, 5);
+        const day = dateStr.substring(5, 7);
+        return `${year}年${month}月${day}日`;
+    }
+
     // 初始化應用程式
     async function initializeApp() {
         try {
-            // 檢查是否存在 LIFF SDK
             if (typeof liff !== 'undefined') {
-                // 初始化 LIFF
-                await liff.init({
-                    liffId: liffId
-                }).then(() => {
-                    // 成功初始化後，檢查是否在 LINE 應用程式內
-                    if (liff.isInClient()) {
-                        console.log('在 LINE 應用程式內執行');
-                        isLiffEnvironment = true;
-                        document.getElementById('browserInfo').textContent = '在 LINE 應用程式內執行中';
-                        document.getElementById('startButton').disabled = false;
-                    } else {
-                        console.log('在外部瀏覽器執行');
+                await liff.init({ liffId: liffId })
+                    .then(() => {
+                        if (liff.isInClient()) {
+                            console.log('在 LINE 應用程式內執行');
+                            isLiffEnvironment = true;
+                            document.getElementById('browserInfo').textContent = '在 LINE 應用程式內執行中';
+                            document.getElementById('startButton').disabled = false;
+                        } else {
+                            console.log('在外部瀏覽器執行');
+                            useHTML5QRCode();
+                        }
+                    })
+                    .catch(err => {
+                        console.log('LIFF 初始化失敗:', err);
                         useHTML5QRCode();
-                    }
-                }).catch(err => {
-                    console.log('LIFF 初始化失敗:', err);
-                    useHTML5QRCode();
-                });
+                    });
             } else {
                 console.log('LIFF SDK 未載入');
                 useHTML5QRCode();
@@ -193,9 +241,7 @@
             const result = await liff.scanCodeV2();
             await handleScanResult(result.value);
 
-            // 檢查是否需要自動開始下一次掃描
             if (isLiffEnvironment && ((leftQRData && !rightQRData) || (!leftQRData && rightQRData))) {
-                // 短暫延遲以允許UI更新
                 setTimeout(() => {
                     startLiffScanner();
                 }, 500);
@@ -253,7 +299,6 @@
             }
 
             if (!isNewScan) {
-                // 如果掃描到已經掃過的 QR code，提示用戶
                 document.getElementById('notice').textContent = '此 QR Code 已掃描，請掃描另一側';
                 return;
             }
@@ -265,7 +310,6 @@
             }
 
             if (isLiffEnvironment && !(leftQRData && rightQRData)) {
-                // 在 LIFF 環境中，如果還沒掃完兩個 QR code，不要顯示開始按鈕
                 document.getElementById('startButton').style.display = 'none';
             } else if (!isLiffEnvironment) {
                 document.getElementById('startButton').style.display = 'inline-block';
@@ -276,6 +320,7 @@
         }
     }
 
+    // 解析商品資訊
     function parseProducts(qrData) {
         try {
             const parts = qrData.split(':');
@@ -300,6 +345,7 @@
         }
     }
 
+    // 判斷 QR Code 類型
     function isLeftQRCode(text) {
         return text.length >= 77 && !text.startsWith('**');
     }
@@ -308,11 +354,10 @@
         return text.startsWith('**');
     }
 
+    // 更新提示訊息
     function updateNotice() {
         const notice = document.getElementById('notice');
         if (!leftQRData && !rightQRData) {
-            notice.textContent = '請掃描發票上的任一 QR Code';
-        } else if (!leftQRData) {
             notice.textContent = '請掃描左側 QR Code';
         } else if (!rightQRData) {
             notice.textContent = '請掃描右側 QR Code';
@@ -323,6 +368,7 @@
         console.log(error);
     }
 
+    // 停止掃描
     async function stopScanner() {
         if (html5QrcodeScanner) {
             try {
@@ -335,6 +381,7 @@
         isScanning = false;
     }
 
+    // 重設掃描器
     function resetScanner() {
         stopScanner();
         leftQRData = null;
@@ -352,43 +399,123 @@
         document.getElementById('resetButton').style.display = 'none';
     }
 
+    // 解析左側 QR Code
+    function parseLeftQRCode(qrData) {
+        const invoiceNumber = qrData.substring(0, 10);
+        const date = qrData.substring(10, 17);
+        const randomNumber = qrData.substring(17, 21);
+        const salesAmount = parseInt(qrData.substring(21, 29), 16);
+        const totalAmount = parseInt(qrData.substring(29, 37), 16);
+        const buyerBan = qrData.substring(37, 45);
+        const sellerBan = qrData.substring(45, 53);
+        const encryptInfo = qrData.substring(53, 77);
+
+        return {
+            invoiceNumber,
+            date,
+            randomNumber,
+            salesAmount,
+            totalAmount,
+            buyerBan,
+            sellerBan,
+            encryptInfo,
+            taxAmount: totalAmount - salesAmount
+        };
+    }
+
+    // 解析右側 QR Code
+    function parseRightQRCode(qrData) {
+        if (!qrData.startsWith('**')) {
+            throw new Error('非右側 QR Code');
+        }
+
+        // 移除 '**' 開頭
+        qrData = qrData.substring(2);
+
+        const parts = qrData.split(':');
+        let encodingType = 1; // 預設 UTF-8
+
+        // 尋找編碼參數
+        for (let i = 0; i < parts.length; i++) {
+            if (parts[i].match(/^[0-3]$/)) {
+                encodingType = parseInt(parts[i]);
+                break;
+            }
+        }
+
+        let decodedData = qrData;
+        try {
+            switch (encodingType) {
+                case 0: // Big5
+                    // 需要額外處理 Big5 編碼
+                    break;
+                case 1: // UTF-8
+                    // UTF-8 不需特別處理
+                    break;
+                case 2: // Base64
+                    decodedData = atob(qrData);
+                    break;
+                case 3: // 境外電商 UTF-8
+                    // 處理境外電商特殊格式
+                    break;
+            }
+        } catch (e) {
+            console.error('解碼失敗:', e);
+        }
+
+        return parseProducts(decodedData);
+    }
+
+    // 處理完整掃描資料
     function processCompleteData() {
         try {
             const result = document.getElementById('result');
             result.style.display = 'block';
 
-            const invoiceNumber = leftQRData.substring(0, 10);
-            const date = leftQRData.substring(10, 17);
-            const randomNumber = leftQRData.substring(17, 21);
-            const salesAmount = parseInt(leftQRData.substring(21, 29), 16);
-            const totalAmount = parseInt(leftQRData.substring(29, 37), 16);
-
-            // 解析商品資訊
-            const products = parseProducts(rightQRData);
+            // 解析左側 QR Code
+            const leftData = parseLeftQRCode(leftQRData);
+            const products = parseRightQRCode(rightQRData);
 
             let productsHtml = '';
             if (products.length > 0) {
                 productsHtml = '<div class="product-list"><h4>商品明細：</h4>';
-                products.forEach(product => {
+                products.forEach((product, index) => {
+                    const subtotal = product.quantity * product.price;
                     productsHtml += `
-                        <div class="product-item">
-                            <div>品名：${product.name}</div>
-                            <div>數量：${product.quantity}</div>
-                            <div>單價：${product.price}</div>
-                        </div>
-                    `;
+                            <div class="product-item">
+                                <div class="product-header">${index + 1}. ${product.name}</div>
+                                <div class="product-details">
+                                    <div>數量：${product.quantity}</div>
+                                    <div>單價：${formatMoney(product.price)}</div>
+                                    <div>小計：${formatMoney(subtotal)}</div>
+                                </div>
+                            </div>
+                        `;
                 });
                 productsHtml += '</div>';
             }
 
+            // 判斷是否為一般消費者
+            const isConsumer = leftData.buyerBan === '00000000';
+
             result.innerHTML = `
-                <h3>發票資訊</h3>
-                <p>發票號碼：${invoiceNumber}</p>
-                <p>開立日期：${formatDate(date)}</p>
-                <p>隨機碼：${randomNumber}</p>
-                <p>總金額：${totalAmount}</p>
-                ${productsHtml}
-            `;
+                    <h3>發票資訊</h3>
+                    <div class="invoice-header">
+                        <p>發票號碼：${leftData.invoiceNumber}</p>
+                        <p>開立日期：${formatDate(leftData.date)}</p>
+                        <p>隨機碼：${leftData.randomNumber}</p>
+                    </div>
+                    <div class="seller-info">
+                        <p>賣方統編：${leftData.sellerBan}</p>
+                        ${!isConsumer ? `<p>買方統編：${leftData.buyerBan}</p>` : ''}
+                    </div>
+                    <div class="amount-info">
+                        <p>未稅金額：${formatMoney(leftData.salesAmount)}</p>
+                        <p>營業稅額：${formatMoney(leftData.taxAmount)}</p>
+                        <p class="total-amount">總計金額：${formatMoney(leftData.totalAmount)}</p>
+                    </div>
+                    ${productsHtml}
+                `;
 
             stopScanner();
             document.getElementById('notice').textContent = '掃描完成！';
@@ -399,13 +526,6 @@
             document.getElementById('notice').textContent = '處理資料時發生錯誤，請重新掃描';
             document.getElementById('resetButton').style.display = 'inline-block';
         }
-    }
-
-    function formatDate(dateStr) {
-        const year = parseInt(dateStr.substring(0, 3)) + 1911;
-        const month = dateStr.substring(3, 5);
-        const day = dateStr.substring(5, 7);
-        return `${year}年${month}月${day}日`;
     }
 
     // 綁定事件
