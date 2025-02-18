@@ -3,304 +3,169 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>電子發票掃描器</title>
+    <title>台灣電子發票掃描器</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
+            margin: 0;
             padding: 20px;
             background-color: #f8f9fa;
         }
-        .container {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        #reader {
+        .scanner-container {
+            position: relative;
             width: 100%;
             max-width: 600px;
             margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        #reader {
+            width: 100%;
+            position: relative;
+        }
+        .scan-region-highlight {
+            position: absolute;
+            border: 2px solid #2ecc71;
+            border-radius: 8px;
+            box-shadow: 0 0 0 4px rgba(46, 204, 113, 0.3);
+            animation: pulse 2s infinite;
+        }
+        .scan-region-highlight-left {
+            left: 25%;
+            top: 30%;
+            width: 120px;
+            height: 120px;
+            transform: translateX(-50%);
+        }
+        .scan-region-highlight-right {
+            right: 25%;
+            top: 30%;
+            width: 120px;
+            height: 120px;
+            transform: translateX(50%);
+            display: none;
+        }
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.4);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(46, 204, 113, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(46, 204, 113, 0);
+            }
+        }
+        .scan-status {
+            text-align: center;
+            padding: 15px;
+            background: #fff3cd;
+            color: #856404;
+            font-weight: bold;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .scan-status.success {
+            background: #d4edda;
+            color: #155724;
         }
         .result-container {
             margin-top: 20px;
             padding: 15px;
-            background: #f8f9fa;
-            border-radius: 4px;
-        }
-        .result-item {
-            margin: 10px 0;
-            padding: 10px;
             background: white;
-            border-radius: 4px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        .scan-status {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-            text-align: center;
-            font-weight: bold;
-        }
-        .scan-pending {
-            background-color: #fff3cd;
-            color: #856404;
-        }
-        .scan-success {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        .label {
-            font-weight: bold;
-            color: #495057;
-            margin-right: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         button {
-            background-color: #007bff;
+            background: #2ecc71;
             color: white;
             border: none;
-            padding: 10px 20px;
+            padding: 12px 24px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 16px;
-            margin: 10px 0;
+            margin: 10px;
+            transition: background 0.3s;
         }
         button:hover {
-            background-color: #0056b3;
+            background: #27ae60;
         }
-        .error {
-            color: #dc3545;
-            background-color: #f8d7da;
-            padding: 10px;
-            border-radius: 4px;
+        .reset-button {
+            background: #e74c3c;
+        }
+        .reset-button:hover {
+            background: #c0392b;
+        }
+        .guide-text {
+            text-align: center;
+            color: #666;
             margin: 10px 0;
-        }
-        .items-container {
-            margin-top: 15px;
-            border-top: 1px solid #dee2e6;
-            padding-top: 15px;
-        }
-        .item-card {
-            background: #f8f9fa;
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
+            font-size: 14px;
         }
     </style>
 </head>
 <body>
-<div class="container">
-    <h1>電子發票掃描器</h1>
-    <div id="scanStatus" class="scan-status scan-pending">
-        請掃描發票左側 QR Code
+<div class="scanner-container">
+    <div class="scan-status" id="scanStatus">請將發票左側 QR Code 對準框框</div>
+    <div id="reader">
+        <div class="scan-region-highlight scan-region-highlight-left"></div>
+        <div class="scan-region-highlight scan-region-highlight-right"></div>
     </div>
-    <div id="reader"></div>
-    <button onclick="startScanner()">開始掃描</button>
-    <button onclick="resetScanner()" style="background-color: #dc3545;">重新開始</button>
+    <div class="guide-text">對準框框內的QR Code</div>
+    <div style="text-align: center;">
+        <button onclick="startScanner()">開始掃描</button>
+        <button onclick="resetScanner()" class="reset-button">重新開始</button>
+    </div>
 </div>
 
-<div id="result" class="container" style="display: none;">
-    <h2>掃描結果</h2>
+<div id="result" class="result-container" style="display: none;">
     <div id="invoiceDetails"></div>
 </div>
 
 <script>
-    let html5QrcodeScanner = null;
-    let invoiceData = {
-        leftQRCode: null,
-        rightQRCode: null
-    };
+    // [這裡使用之前的 JavaScript 程式碼，只需添加以下更新]
 
-    // 解析左側 QR Code
-    function parseLeftQRCode(text) {
-        try {
-            if (text.length < 77) {
-                throw new Error('QR Code 格式不正確');
-            }
-
-            return {
-                number: text.substring(0, 10),          // 發票號碼
-                date: text.substring(10, 17),           // 發票開立日期
-                randomNumber: text.substring(17, 21),   // 隨機碼
-                salesAmount: parseInt(text.substring(21, 29), 16),  // 銷售額(16進位)
-                totalAmount: parseInt(text.substring(29, 37), 16),  // 總計金額(16進位)
-                buyerIdentifier: text.substring(37, 45),           // 買方統編
-                sellerIdentifier: text.substring(45, 53),          // 賣方統編
-                encryptionInfo: text.substring(53, 77),            // 加密驗證資訊
-                remainingText: text.substring(77)                   // 剩餘商品資訊
-            };
-        } catch (error) {
-            throw new Error('解析左側 QR Code 失敗: ' + error.message);
-        }
+    function switchToRightQRCode() {
+        document.querySelector('.scan-region-highlight-left').style.display = 'none';
+        document.querySelector('.scan-region-highlight-right').style.display = 'block';
+        document.getElementById('scanStatus').textContent = '請將發票右側 QR Code 對準框框';
     }
 
-    // 解析右側 QR Code
-    function parseRightQRCode(text) {
-        try {
-            if (!text.startsWith('**')) {
-                throw new Error('不是有效的右側 QR Code');
-            }
-            return {
-                itemsInfo: text.substring(2)  // 移除 ** 開頭
-            };
-        } catch (error) {
-            throw new Error('解析右側 QR Code 失敗: ' + error.message);
-        }
-    }
-
-    // 解析商品資訊
-    function parseItems(leftText, rightText) {
-        const items = [];
-        try {
-            // 組合左右兩邊的商品資訊
-            const allText = leftText + rightText;
-            const parts = allText.split(':');
-
-            // 每三個欄位為一組商品資訊 (品名:數量:單價)
-            for (let i = 0; i < parts.length; i += 3) {
-                if (parts[i] && parts[i+1] && parts[i+2]) {
-                    items.push({
-                        name: parts[i],
-                        quantity: parts[i+1],
-                        price: parts[i+2]
-                    });
-                }
-            }
-        } catch (error) {
-            console.error('解析商品資訊時發生錯誤:', error);
-        }
-        return items;
-    }
-
-    // 顯示發票資訊
-    function displayInvoiceInfo(invoice, items) {
-        const detailsDiv = document.getElementById('invoiceDetails');
-        let html = `
-                <div class="result-item">
-                    <span class="label">發票號碼：</span>${invoice.number}
-                </div>
-                <div class="result-item">
-                    <span class="label">開立日期：</span>${formatDate(invoice.date)}
-                </div>
-                <div class="result-item">
-                    <span class="label">隨機碼：</span>${invoice.randomNumber}
-                </div>
-                <div class="result-item">
-                    <span class="label">銷售額：</span>${invoice.salesAmount}
-                </div>
-                <div class="result-item">
-                    <span class="label">總計金額：</span>${invoice.totalAmount}
-                </div>
-                <div class="result-item">
-                    <span class="label">賣方統編：</span>${invoice.sellerIdentifier}
-                </div>
-            `;
-
-        if (items && items.length > 0) {
-            html += '<div class="items-container"><h3>商品明細</h3>';
-            items.forEach(item => {
-                html += `
-                        <div class="item-card">
-                            <div><span class="label">品名：</span>${item.name}</div>
-                            <div><span class="label">數量：</span>${item.quantity}</div>
-                            <div><span class="label">單價：</span>${item.price}</div>
-                        </div>
-                    `;
-            });
-            html += '</div>';
-        }
-
-        detailsDiv.innerHTML = html;
-        document.getElementById('result').style.display = 'block';
-    }
-
-    // 格式化日期
-    function formatDate(dateStr) {
-        const year = parseInt(dateStr.substring(0, 3)) + 1911;
-        const month = dateStr.substring(3, 5);
-        const day = dateStr.substring(5, 7);
-        return `${year}年${month}月${day}日`;
-    }
-
-    // 處理掃描結果
-    async function handleScanResult(decodedText) {
+    function handleScanResult(decodedText) {
         try {
             if (!invoiceData.leftQRCode) {
-                // 處理左側 QR Code
                 invoiceData.leftQRCode = parseLeftQRCode(decodedText);
-                document.getElementById('scanStatus').textContent = '請掃描發票右側 QR Code';
+                switchToRightQRCode();
             } else if (!invoiceData.rightQRCode) {
-                // 處理右側 QR Code
                 invoiceData.rightQRCode = parseRightQRCode(decodedText);
-
-                // 解析商品資訊
                 const items = parseItems(
                     invoiceData.leftQRCode.remainingText || '',
                     invoiceData.rightQRCode.itemsInfo || ''
                 );
-
-                // 顯示完整發票資訊
                 displayInvoiceInfo(invoiceData.leftQRCode, items);
-                document.getElementById('scanStatus').className = 'scan-status scan-success';
+                document.getElementById('scanStatus').className = 'scan-status success';
                 document.getElementById('scanStatus').textContent = '掃描完成！';
-                await stopScanner();
+                stopScanner();
             }
         } catch (error) {
             console.error('處理掃描結果時發生錯誤:', error);
-            document.getElementById('result').innerHTML = `
-                    <div class="error">${error.message}</div>
-                `;
+            document.getElementById('scanStatus').textContent = error.message;
         }
     }
 
-    // 開始掃描
-    function startScanner() {
-        html5QrcodeScanner = new Html5Qrcode("reader");
-        const config = {
-            fps: 10,
-            qrbox: { width: 250, height: 250 }
-        };
-
-        html5QrcodeScanner.start(
-            { facingMode: "environment" },
-            config,
-            handleScanResult,
-            (errorMessage) => {
-                // 掃描過程中的錯誤可以忽略
-                console.log(errorMessage);
-            }
-        ).catch((err) => {
-            console.error('無法啟動掃描器:', err);
-            document.getElementById('result').innerHTML = `
-                    <div class="error">無法啟動掃描器：${err.message}</div>
-                `;
-        });
-    }
-
-    // 停止掃描
-    async function stopScanner() {
-        if (html5QrcodeScanner) {
-            try {
-                await html5QrcodeScanner.stop();
-            } catch (error) {
-                console.error('停止掃描器時發生錯誤:', error);
-            }
-        }
-    }
-
-    // 重設掃描器
     function resetScanner() {
         invoiceData = {
             leftQRCode: null,
             rightQRCode: null
         };
-        document.getElementById('scanStatus').className = 'scan-status scan-pending';
-        document.getElementById('scanStatus').textContent = '請掃描發票左側 QR Code';
+        document.querySelector('.scan-region-highlight-left').style.display = 'block';
+        document.querySelector('.scan-region-highlight-right').style.display = 'none';
+        document.getElementById('scanStatus').className = 'scan-status';
+        document.getElementById('scanStatus').textContent = '請將發票左側 QR Code 對準框框';
         document.getElementById('result').style.display = 'none';
-        document.getElementById('invoiceDetails').innerHTML = '';
     }
 </script>
 </body>
