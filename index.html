@@ -131,14 +131,16 @@
     // 初始化應用程式
     async function initializeApp() {
         try {
-            // 檢查是否在 LINE 環境中
-            if (window.liff) {
+            // 檢查是否在 LINE 應用程式內部
+            if (window.liff && /Line/i.test(navigator.userAgent)) {
                 isLiffEnvironment = true;
                 await initializeLiff();
             } else {
+                // 一般瀏覽器模式
                 isLiffEnvironment = false;
                 document.getElementById('browserInfo').textContent = '使用一般瀏覽器掃描模式';
                 document.getElementById('startButton').disabled = false;
+                document.getElementById('loginBtn').style.display = 'none';
             }
         } catch (err) {
             console.error('初始化失敗:', err);
@@ -196,7 +198,7 @@
     async function startScanner() {
         if (isScanning) return;
 
-        if (isLiffEnvironment) {
+        if (isLiffEnvironment && liff.isInClient()) {
             startLiffScanner();
         } else {
             startHTML5Scanner();
