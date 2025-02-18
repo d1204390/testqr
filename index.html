@@ -32,18 +32,6 @@
         #reader {
             width: 100%;
             margin: 16px 0;
-            position: relative;
-        }
-        .guide-box {
-            position: absolute;
-            width: 200px;
-            height: 200px;
-            border: 2px solid #4CAF50;
-            border-radius: 8px;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
         }
         .button-group {
             display: flex;
@@ -75,11 +63,31 @@
             border-radius: 8px;
             display: none;
         }
+        .scan-status {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .status-item {
+            flex: 1;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            background: #ECEFF1;
+        }
+        .status-item.done {
+            background: #C8E6C9;
+            color: #2E7D32;
+        }
     </style>
 </head>
 <body>
 <div class="container">
-    <div id="notice" class="notice">請將發票左側 QR Code 對準框框</div>
+    <div id="notice" class="notice">請掃描發票上的任一 QR Code</div>
+    <div class="scan-status">
+        <div id="leftStatus" class="status-item">左側 QR Code：未掃描</div>
+        <div id="rightStatus" class="status-item">右側 QR Code：未掃描</div>
+    </div>
     <div id="reader"></div>
     <div class="button-group">
         <button class="start-btn" onclick="startScanner()">開始掃描</button>
@@ -128,28 +136,50 @@
         stopScanner();
         leftQRData = null;
         rightQRData = null;
-        document.getElementById('notice').textContent = '請將發票左側 QR Code 對準框框';
+        document.getElementById('notice').textContent = '請掃描發票上的任一 QR Code';
+        document.getElementById('leftStatus').textContent = '左側 QR Code：未掃描';
+        document.getElementById('leftStatus').className = 'status-item';
+        document.getElementById('rightStatus').textContent = '右側 QR Code：未掃描';
+        document.getElementById('rightStatus').className = 'status-item';
         document.getElementById('result').style.display = 'none';
         document.getElementById('result').textContent = '';
     }
 
     function onScanSuccess(decodedText) {
         try {
-            if (!leftQRData) {
-                // 嘗試解析左側 QR Code
-                if (decodedText.length >= 77) {
-                    leftQRData = decodedText;
-                    document.getElementById('notice').textContent = '請將發票右側 QR Code 對準框框';
-                }
-            } else if (!rightQRData) {
-                // 嘗試解析右側 QR Code
-                if (decodedText.startsWith('**')) {
-                    rightQRData = decodedText;
-                    processCompleteData();
-                }
+            // 判斷是左側還是右側 QR Code
+            if (decodedText.length >= 77 && !leftQRData) {
+                // 左側 QR Code
+                leftQRData = decodedText;
+                document.getElementById('leftStatus').textContent = '左側 QR Code：已掃描';
+                document.getElementById('leftStatus').className = 'status-item done';
+            } else if (decodedText.startsWith('**') && !rightQRData) {
+                // 右側 QR Code
+                rightQRData = decodedText;
+                document.getElementById('rightStatus').textContent = '右側 QR Code：已掃描';
+                document.getElementById('rightStatus').className = 'status-item done';
+            }
+
+            // 更新提示訊息
+            updateNotice();
+
+            // 檢查是否完成掃描
+            if (leftQRData && rightQRData) {
+                processCompleteData();
             }
         } catch (error) {
             console.error('處理掃描資料時發生錯誤:', error);
+        }
+    }
+
+    function updateNotice() {
+        const notice = document.getElementById('notice');
+        if (!leftQRData && !rightQRData) {
+            notice.textContent = '請掃描發票上的任一 QR Code';
+        } else if (!leftQRData) {
+            notice.textContent = '請掃描左側 QR Code';
+        } else if (!rightQRData) {
+            notice.textContent = '請掃描右側 QR Code';
         }
     }
 
