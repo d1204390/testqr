@@ -38,6 +38,21 @@
             border-radius: 4px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
+        .scan-status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .scan-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .scan-success {
+            background-color: #d4edda;
+            color: #155724;
+        }
         .label {
             font-weight: bold;
             color: #495057;
@@ -63,14 +78,28 @@
             border-radius: 4px;
             margin: 10px 0;
         }
+        .items-container {
+            margin-top: 15px;
+            border-top: 1px solid #dee2e6;
+            padding-top: 15px;
+        }
+        .item-card {
+            background: #f8f9fa;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
 <div class="container">
     <h1>台灣電子發票掃描器</h1>
+    <div id="scanStatus" class="scan-status scan-pending">
+        請掃描發票左側 QR Code
+    </div>
     <div id="reader"></div>
     <button onclick="startScanner()">開始掃描</button>
-    <button onclick="stopScanner()" style="display: none;">停止掃描</button>
+    <button onclick="resetScanner()" style="background-color: #dc3545;">重新開始</button>
 </div>
 
 <div id="result" class="container" style="display: none;">
@@ -80,17 +109,19 @@
 
 <script>
     let html5QrcodeScanner = null;
+    let invoiceData = {
+        leftQRCode: null,
+        rightQRCode: null
+    };
 
-    // 解析發票 QR Code
-    function parseInvoiceQRCode(text) {
+    // 解析左側 QR Code
+    function parseLeftQRCode(text) {
         try {
-            // 依據財政部規格解析 QR Code 內容
-            // 前77碼為固定格式
             if (text.length < 77) {
                 throw new Error('QR Code 格式不正確');
             }
 
-            const invoice = {
+            return {
                 number: text.substring(0, 10),          // 發票號碼
                 date: text.substring(10, 17),           // 發票開立日期
                 randomNumber: text.substring(17, 21),   // 隨機碼
@@ -98,34 +129,56 @@
                 totalAmount: parseInt(text.substring(29, 37), 16),  // 總計金額(16進位)
                 buyerIdentifier: text.substring(37, 45),           // 買方統編
                 sellerIdentifier: text.substring(45, 53),          // 賣方統編
-                encryptionInfo: text.substring(53, 77)             // 加密驗證資訊
+                encryptionInfo: text.substring(53, 77),            // 加密驗證資訊
+                remainingText: text.substring(77)                   // 剩餘商品資訊
             };
-
-            // 解析後續的商品資訊
-            let remainingText = text.substring(77);
-            let items = [];
-
-            if (remainingText.length > 0) {
-                // 以 : 分隔的資訊
-                const parts = remainingText.split(':');
-                if (parts.length >= 4) {
-                    invoice.extraInfo = parts[1];  // 營業人自行使用區
-                    invoice.itemCount = parts[2];  // 品項數
-                    invoice.encoding = parts[3];   // 中文編碼參數
-                }
-            }
-
-            return invoice;
         } catch (error) {
-            console.error('解析發票資料時發生錯誤:', error);
-            throw new Error('無法解析發票資料，請確認是否掃描正確的電子發票 QR Code');
+            throw new Error('解析左側 QR Code 失敗: ' + error.message);
         }
     }
 
+    // 解析右側 QR Code
+    function parseRightQRCode(text) {
+        try {
+            if (!text.startsWith('**')) {
+                throw new Error('不是有效的右側 QR Code');
+            }
+            return {
+                itemsInfo: text.substring(2)  // 移除 ** 開頭
+            };
+        } catch (error) {
+            throw new Error('解析右側 QR Code 失敗: ' + error.message);
+        }
+    }
+
+    // 解析商品資訊
+    function parseItems(leftText, rightText) {
+        const items = [];
+        try {
+            // 組合左右兩邊的商品資訊
+            const allText = leftText + rightText;
+            const parts = allText.split(':');
+
+            // 每三個欄位為一組商品資訊 (品名:數量:單價)
+            for (let i = 0; i < parts.length; i += 3) {
+                if (parts[i] && parts[i+1] && parts[i+2]) {
+                    items.push({
+                        name: parts[i],
+                        quantity: parts[i+1],
+                        price: parts[i+2]
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('解析商品資訊時發生錯誤:', error);
+        }
+        return items;
+    }
+
     // 顯示發票資訊
-    function displayInvoiceInfo(invoice) {
+    function displayInvoiceInfo(invoice, items) {
         const detailsDiv = document.getElementById('invoiceDetails');
-        detailsDiv.innerHTML = `
+        let html = `
                 <div class="result-item">
                     <span class="label">發票號碼：</span>${invoice.number}
                 </div>
@@ -145,16 +198,62 @@
                     <span class="label">賣方統編：</span>${invoice.sellerIdentifier}
                 </div>
             `;
+
+        if (items && items.length > 0) {
+            html += '<div class="items-container"><h3>商品明細</h3>';
+            items.forEach(item => {
+                html += `
+                        <div class="item-card">
+                            <div><span class="label">品名：</span>${item.name}</div>
+                            <div><span class="label">數量：</span>${item.quantity}</div>
+                            <div><span class="label">單價：</span>${item.price}</div>
+                        </div>
+                    `;
+            });
+            html += '</div>';
+        }
+
+        detailsDiv.innerHTML = html;
         document.getElementById('result').style.display = 'block';
     }
 
     // 格式化日期
     function formatDate(dateStr) {
-        // 民國年轉西元年
         const year = parseInt(dateStr.substring(0, 3)) + 1911;
         const month = dateStr.substring(3, 5);
         const day = dateStr.substring(5, 7);
         return `${year}年${month}月${day}日`;
+    }
+
+    // 處理掃描結果
+    async function handleScanResult(decodedText) {
+        try {
+            if (!invoiceData.leftQRCode) {
+                // 處理左側 QR Code
+                invoiceData.leftQRCode = parseLeftQRCode(decodedText);
+                document.getElementById('scanStatus').textContent = '請掃描發票右側 QR Code';
+            } else if (!invoiceData.rightQRCode) {
+                // 處理右側 QR Code
+                invoiceData.rightQRCode = parseRightQRCode(decodedText);
+
+                // 解析商品資訊
+                const items = parseItems(
+                    invoiceData.leftQRCode.remainingText || '',
+                    invoiceData.rightQRCode.itemsInfo || ''
+                );
+
+                // 顯示完整發票資訊
+                displayInvoiceInfo(invoiceData.leftQRCode, items);
+                document.getElementById('scanStatus').className = 'scan-status scan-success';
+                document.getElementById('scanStatus').textContent = '掃描完成！';
+                await stopScanner();
+            }
+        } catch (error) {
+            console.error('處理掃描結果時發生錯誤:', error);
+            document.getElementById('result').innerHTML = `
+                    <div class="error">${error.message}</div>
+                `;
+        }
     }
 
     // 開始掃描
@@ -162,25 +261,13 @@
         html5QrcodeScanner = new Html5Qrcode("reader");
         const config = {
             fps: 10,
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0
+            qrbox: { width: 250, height: 250 }
         };
 
         html5QrcodeScanner.start(
             { facingMode: "environment" },
             config,
-            async (decodedText) => {
-                try {
-                    const invoice = parseInvoiceQRCode(decodedText);
-                    await stopScanner();
-                    displayInvoiceInfo(invoice);
-                } catch (error) {
-                    console.error('處理掃描結果時發生錯誤:', error);
-                    document.getElementById('result').innerHTML = `
-                            <div class="error">${error.message}</div>
-                        `;
-                }
-            },
+            handleScanResult,
             (errorMessage) => {
                 // 掃描過程中的錯誤可以忽略
                 console.log(errorMessage);
@@ -202,6 +289,18 @@
                 console.error('停止掃描器時發生錯誤:', error);
             }
         }
+    }
+
+    // 重設掃描器
+    function resetScanner() {
+        invoiceData = {
+            leftQRCode: null,
+            rightQRCode: null
+        };
+        document.getElementById('scanStatus').className = 'scan-status scan-pending';
+        document.getElementById('scanStatus').textContent = '請掃描發票左側 QR Code';
+        document.getElementById('result').style.display = 'none';
+        document.getElementById('invoiceDetails').innerHTML = '';
     }
 </script>
 </body>
