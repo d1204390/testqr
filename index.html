@@ -79,16 +79,13 @@
             color: #2E7D32;
         }
         .product-list {
-            margin-top: 16px;
-            border-top: 1px solid #ddd;
-            padding-top: 16px;
+            margin-top: 10px;
+            border-top: 1px solid #ccc;
+            padding-top: 10px;
         }
         .product-item {
             padding: 8px;
             border-bottom: 1px solid #eee;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }
     </style>
 </head>
@@ -172,29 +169,32 @@
         return text.startsWith('**');
     }
 
-    function parseProducts(rightQRData) {
-        if (!rightQRData || !rightQRData.includes(':')) return [];
+    function parseProducts(qrData) {
+        try {
+            const parts = qrData.split(':');
+            const products = [];
+            let currentProduct = {};
 
-        const products = [];
-        const parts = rightQRData.split(':');
-
-        // 從第2個元素開始，每3個元素組成一個商品
-        for (let i = 1; i < parts.length; i += 3) {
-            if (parts[i] && parts[i+1] && parts[i+2]) {
-                products.push({
-                    name: parts[i],
-                    quantity: parts[i+1],
-                    price: parts[i+2]
-                });
+            for (let i = 0; i < parts.length; i++) {
+                if (parts[i].includes('品名')) {
+                    currentProduct = {
+                        name: parts[i + 1],
+                        quantity: parseInt(parts[i + 2]),
+                        price: parseInt(parts[i + 3])
+                    };
+                    products.push(currentProduct);
+                }
             }
-        }
 
-        return products;
+            return products;
+        } catch (error) {
+            console.error('解析商品資訊時發生錯誤:', error);
+            return [];
+        }
     }
 
     function onScanSuccess(decodedText) {
         try {
-            // 防止重複掃描同一個QR Code
             const currentTime = new Date().getTime();
             if (lastScannedData === decodedText && currentTime - lastScannedTime < 1000) {
                 return;
@@ -252,29 +252,29 @@
             // 解析商品資訊
             const products = parseProducts(rightQRData);
 
-            let html = `
+            let productsHtml = '';
+            if (products.length > 0) {
+                productsHtml = '<div class="product-list"><h4>商品明細：</h4>';
+                products.forEach(product => {
+                    productsHtml += `
+                        <div class="product-item">
+                            <div>品名：${product.name}</div>
+                            <div>數量：${product.quantity}</div>
+                            <div>單價：${product.price}</div>
+                        </div>
+                    `;
+                });
+                productsHtml += '</div>';
+            }
+
+            result.innerHTML = `
                 <h3>發票資訊</h3>
                 <p>發票號碼：${invoiceNumber}</p>
                 <p>開立日期：${formatDate(date)}</p>
                 <p>隨機碼：${randomNumber}</p>
                 <p>總金額：${totalAmount}</p>
+                ${productsHtml}
             `;
-
-            // 添加商品資訊
-            if (products.length > 0) {
-                html += '<div class="product-list"><h3>商品明細</h3>';
-                products.forEach(product => {
-                    html += `
-                        <div class="product-item">
-                            <span>${product.name}</span>
-                            <span>${product.quantity} x ${product.price}</span>
-                        </div>
-                    `;
-                });
-                html += '</div>';
-            }
-
-            result.innerHTML = html;
 
             stopScanner();
             document.getElementById('notice').textContent = '掃描完成！';
