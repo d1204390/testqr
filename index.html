@@ -231,15 +231,33 @@
             const day = dateStr.substring(5, 7);
             const formattedDate = `${year}/${month}/${day}`;
 
-            // 使用 postMessage 傳送資料到主頁面
-            window.parent.postMessage({
-                type: 'invoice',
+            // 準備要回傳的資料
+            const submitData = {
                 invDate: formattedDate,
                 invNum: invoiceData.invoiceNumber,
                 randomNumber: invoiceData.randomNumber
-            }, '*');
+            };
 
-            document.getElementById('notice').textContent = '發票資料已成功送出！';
+            // 回傳資料到原系統
+            try {
+                const response = await fetch('/home/invoice/submit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(submitData)
+                });
+
+                if (response.ok) {
+                    document.getElementById('notice').textContent = '發票資料已成功送出！';
+                } else {
+                    throw new Error('送出失敗');
+                }
+            } catch (error) {
+                console.error('送出資料時發生錯誤:', error);
+                document.getElementById('notice').textContent = '發票資料送出失敗，請重試';
+            }
+
             stopScanner();
             document.getElementById('startButton').style.display = 'none';
             document.getElementById('resetButton').style.display = 'inline-block';
